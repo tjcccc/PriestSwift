@@ -2,28 +2,28 @@
 import PackageDescription
 
 let package = Package(
-    name: "priest-swift",
+    name: "PriestSwift",
     platforms: [
         .iOS(.v15),
         .macOS(.v12),
     ],
     products: [
-        .library(name: "PriestCore", targets: ["PriestCore"]),
+        .library(name: "Priest", targets: ["Priest"]),
     ],
     dependencies: [],
     targets: [
         .target(
-            name: "PriestCore",
+            name: "Priest",
             dependencies: [],
-            path: "Sources/PriestCore",
+            path: "Sources/Priest",
             linkerSettings: [
                 .linkedLibrary("sqlite3"),
             ]
         ),
         .testTarget(
-            name: "PriestCoreTests",
-            dependencies: ["PriestCore"],
-            path: "Tests/PriestCoreTests"
+            name: "PriestTests",
+            dependencies: ["Priest"],
+            path: "Tests/PriestTests"
         ),
     ]
 )

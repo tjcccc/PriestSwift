@@ -1,5 +1,5 @@
 import XCTest
-@testable import PriestCore
+@testable import Priest
 
 final class SessionStoreTests: XCTestCase {
 

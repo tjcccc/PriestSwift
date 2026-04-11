@@ -1,5 +1,5 @@
 import XCTest
-@testable import PriestCore
+@testable import Priest
 
 /// Tests for the context assembly algorithm.
 /// Verifies canonical string constants and assembly order.

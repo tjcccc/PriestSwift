@@ -1,5 +1,5 @@
 import Foundation
-@testable import PriestCore
+@testable import Priest
 
 /// Fake provider adapter for unit tests — no network calls.
 final class MockAdapter: ProviderAdapter {

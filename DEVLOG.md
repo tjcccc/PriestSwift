@@ -2,7 +2,7 @@
 
 ## 2026-04-11 — Initial implementation
 
-First implementation of `priest-swift`, a native Swift Package for iOS (15+) and macOS (12+).
+First implementation of `PriestSwift`, a native Swift Package for iOS (15+) and macOS (12+).
 
 Implements the priest protocol spec v1.0.0. Reference implementation: Python `priest-core`.
 

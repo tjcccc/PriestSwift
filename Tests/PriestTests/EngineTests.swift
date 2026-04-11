@@ -1,5 +1,5 @@
 import XCTest
-@testable import PriestCore
+@testable import Priest
 
 /// Engine unit tests — mirrors test_engine.py test cases.
 final class EngineTests: XCTestCase {

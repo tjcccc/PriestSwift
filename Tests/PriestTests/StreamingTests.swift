@@ -1,5 +1,5 @@
 import XCTest
-@testable import PriestCore
+@testable import Priest
 
 /// Tests for engine.stream() — chunk delivery, session persistence, error propagation.
 final class StreamingTests: XCTestCase {
