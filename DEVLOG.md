@@ -21,3 +21,7 @@ Implements the priest protocol spec v1.0.0. Reference implementation: Python `pr
 **Test suite:** ContextBuilderTests, EngineTests, StreamingTests, SessionStoreTests.
 
 **Spec version targeted:** 1.0.0 (asserted in `PriestEngine.specVersion`).
+
+## 2026-04-12 — v1.0.0 release
+
+- Added MIT LICENSE
