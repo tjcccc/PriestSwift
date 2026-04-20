@@ -8,7 +8,7 @@ iOS 15+ · macOS 12+ · Swift 5.9+ · Zero external dependencies
 
 ## Overview
 
-PriestSwift is a Swift Package that implements the priest protocol spec v1.0.0 natively — no Python server, no FFI, no network dependency beyond the AI provider itself. It is designed for offline and on-device use cases: iOS apps, macOS tools, Unity (via .NET interop), and any Swift host.
+PriestSwift is a Swift Package that implements the priest protocol spec v2.0.0 natively — no Python server, no FFI, no network dependency beyond the AI provider itself. It is designed for offline and on-device use cases: iOS apps, macOS tools, Unity (via .NET interop), and any Swift host.
 
 The core API is two methods on `PriestEngine`:
 
@@ -140,29 +140,53 @@ The SQLite store is interoperable with the Python `priest` `SqliteSessionStore` 
 
 ## Profiles
 
-A profile supplies `identity`, `rules`, and optional `custom` and `memories` sections that shape the system prompt.
+A profile is a directory that supplies `identity`, `rules`, and optional `custom` and `memories` sections that shape the system prompt.
 
 ```
 profiles/
-├── default.json      ← loaded when profile: "default"
-└── coder.json        ← loaded when profile: "coder"
+├── default/
+│   ├── PROFILE.md       ← required: identity and behavior text
+│   ├── RULES.md         ← optional: strict constraints
+│   ├── CUSTOM.md        ← optional: user customization layer
+│   └── memories/
+│       ├── 01-facts.md  ← memory files loaded in lexicographic order
+│       └── 02-prefs.md
+└── coder/
+    └── PROFILE.md
 ```
 
 ```swift
-let loader = FilesystemProfileLoader(baseURL: URL(fileURLWithPath: "path/to/profiles"))
+let loader = FilesystemProfileLoader(profilesRoot: URL(fileURLWithPath: "path/to/profiles"))
 ```
 
-If the named profile file is not found, `FilesystemProfileLoader` falls back to the built-in default profile (a concise, honest assistant persona).
+If the named directory or `PROFILE.md` is not found, `FilesystemProfileLoader` falls back to the built-in default profile (a concise, honest assistant persona) when `name == "default"`, and throws `.profileNotFound` for any other name.
 
-Profile format — `default.json`:
+The loader caches loaded profiles per instance. Cache key: `(maxMtime, fileCount)` across all profile files. Invalidates automatically when any file changes, is added, or is removed.
 
-```json
-{
-  "identity": "You are a helpful assistant.",
-  "rules": "Be honest. Do not make things up.\nBe concise unless the user asks for depth.",
-  "custom": null,
-  "memories": []
-}
+---
+
+## Memory and Context
+
+```swift
+let request = PriestRequest(
+    config: config,
+    prompt: "What should I work on today?",
+    // Raw system context — injected first, never trimmed or deduped
+    context: ["Today is Monday. App: ProjectManager"],
+    // Dynamic memory — deduped against profile memories and each other
+    memory: ["User prefers bullet points.", "Active sprint: v3.0"],
+    // Per-turn user context — appended to the user message
+    userContext: ["Recent tasks: [fix login bug, update README]"]
+)
+```
+
+When `maxSystemChars` is set on the config, the engine trims `memory` entries tail-first, then `profile.memories` tail-first. `context`, rules, identity, custom, and format instructions are never trimmed.
+
+```swift
+var config = PriestConfig(provider: "ollama", model: "llama3.2")
+config.maxSystemChars = 4096
+
+let request = PriestRequest(config: config, prompt: "Summarize my notes.", memory: longMemoryList)
 ```
 
 ---
@@ -223,10 +247,10 @@ Provider keys are arbitrary strings — the key you register in `adapters:` must
 
 ## Spec
 
-PriestSwift targets priest protocol spec **v1.0.0**. The spec lives in the [`priest`](https://github.com/tjcccc/priest) repository under `spec/`. It defines the canonical context assembly algorithm, session schema, timestamp format, and error codes that all priest SDKs must implement identically.
+PriestSwift targets priest protocol spec **v2.0.0**. The spec lives in the [`priest`](https://github.com/tjcccc/priest) repository under `spec/`. It defines the canonical context assembly algorithm, session schema, timestamp format, and error codes that all priest SDKs must implement identically.
 
 ```swift
-PriestEngine.specVersion  // "1.0.0"
+PriestEngine.specVersion  // "2.0.0"
 ```
 
 ---
