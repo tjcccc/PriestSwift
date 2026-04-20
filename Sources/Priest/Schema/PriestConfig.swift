@@ -12,6 +12,8 @@ public struct PriestConfig: Sendable {
     public var maxOutputTokens: Int?
     /// Advisory cost ceiling in USD. The engine does NOT enforce this.
     public var costLimit: Double?
+    /// Budget for the assembled system prompt in characters. Triggers tail-trim of memory entries when exceeded.
+    public var maxSystemChars: Int?
     /// Provider-specific options merged directly into the request payload.
     /// Examples: `["think": false]` for Ollama/Qwen3, `["temperature": 0.7]`.
     public var providerOptions: [String: JSONValue]
@@ -22,6 +24,7 @@ public struct PriestConfig: Sendable {
         timeoutSeconds: Double = 60.0,
         maxOutputTokens: Int? = nil,
         costLimit: Double? = nil,
+        maxSystemChars: Int? = nil,
         providerOptions: [String: JSONValue] = [:]
     ) {
         self.provider = provider
@@ -29,6 +32,7 @@ public struct PriestConfig: Sendable {
         self.timeoutSeconds = timeoutSeconds
         self.maxOutputTokens = maxOutputTokens
         self.costLimit = costLimit
+        self.maxSystemChars = maxSystemChars
         self.providerOptions = providerOptions
     }
 }

@@ -9,10 +9,12 @@ public struct PriestRequest: Sendable {
     /// Session reference. If nil, no session is created or continued.
     public var session: SessionRef?
     /// App-layer strings injected at the top of the system prompt.
-    /// Use for runtime policy: current date, environment name, guardrails, etc.
-    public var systemContext: [String]
-    /// Additional strings appended to the user turn after the prompt.
-    public var extraContext: [String]
+    /// Raw, passed through untouched. Use for runtime policy: current date, environment name, guardrails.
+    public var context: [String]
+    /// Dynamic memory entries. Deduped against profile memories and each other. Subject to tail-trim.
+    public var memory: [String]
+    /// Strings appended to the user turn after the prompt, joined with \n\n.
+    public var userContext: [String]
     /// Output format hints.
     public var output: OutputSpec
     /// Arbitrary caller metadata. Echoed unchanged into PriestResponse.metadata.
@@ -23,8 +25,9 @@ public struct PriestRequest: Sendable {
         prompt: String,
         profile: String = "default",
         session: SessionRef? = nil,
-        systemContext: [String] = [],
-        extraContext: [String] = [],
+        context: [String] = [],
+        memory: [String] = [],
+        userContext: [String] = [],
         output: OutputSpec = .none,
         metadata: [String: JSONValue] = [:]
     ) {
@@ -32,8 +35,9 @@ public struct PriestRequest: Sendable {
         self.prompt = prompt
         self.profile = profile
         self.session = session
-        self.systemContext = systemContext
-        self.extraContext = extraContext
+        self.context = context
+        self.memory = memory
+        self.userContext = userContext
         self.output = output
         self.metadata = metadata
     }

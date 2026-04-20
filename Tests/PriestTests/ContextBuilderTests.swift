@@ -18,23 +18,25 @@ final class ContextBuilderTests: XCTestCase {
 
     func test_systemMessageNotAddedWhenEmpty() {
         let profile = Profile(name: "test", identity: "", rules: "", custom: "", memories: [])
-        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi", systemContext: [], extraContext: [], outputSpec: .none)
+        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi",
+                                     context: [], memory: [], userContext: [], outputSpec: .none)
         XCTAssertEqual(messages.count, 1)
         XCTAssertEqual(messages[0]["role"], "user")
     }
 
     func test_contextPriorityOrder() {
         let profile = makeProfile(identity: "IDENTITY", rules: "RULES")
-        let messages = buildMessages(profile: profile, session: nil, prompt: "Hello", systemContext: ["SYS"], extraContext: [], outputSpec: .none)
+        let messages = buildMessages(profile: profile, session: nil, prompt: "Hello",
+                                     context: ["SYS"], memory: [], userContext: [], outputSpec: .none)
         let system = messages.first(where: { $0["role"] == "system" })?["content"] ?? ""
-        // SYS must appear before RULES, RULES before IDENTITY
         XCTAssertLessThan(system.range(of: "SYS")!.lowerBound, system.range(of: "RULES")!.lowerBound)
         XCTAssertLessThan(system.range(of: "RULES")!.lowerBound, system.range(of: "IDENTITY")!.lowerBound)
     }
 
     func test_systemPartsSeparatedByDoubleNewline() {
         let profile = makeProfile(identity: "IDENTITY", rules: "RULES")
-        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi", systemContext: [], extraContext: [], outputSpec: .none)
+        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi",
+                                     context: [], memory: [], userContext: [], outputSpec: .none)
         let system = messages.first(where: { $0["role"] == "system" })?["content"] ?? ""
         XCTAssertTrue(system.contains("RULES\n\nIDENTITY"), "System parts must be joined with \\n\\n")
     }
@@ -42,60 +44,63 @@ final class ContextBuilderTests: XCTestCase {
     // MARK: - Format instructions (spec constants)
 
     func test_promptFormat_json() {
-        let profile = makeProfile()
-        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi", systemContext: [], extraContext: [], outputSpec: OutputSpec(promptFormat: .json))
+        let messages = buildMessages(profile: makeProfile(), session: nil, prompt: "Hi",
+                                     context: [], memory: [], userContext: [],
+                                     outputSpec: OutputSpec(promptFormat: .json))
         let system = messages.first(where: { $0["role"] == "system" })?["content"] ?? ""
         XCTAssertTrue(system.contains("Respond only with valid JSON. No prose, no markdown code fences."))
     }
 
     func test_promptFormat_xml() {
-        let profile = makeProfile()
-        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi", systemContext: [], extraContext: [], outputSpec: OutputSpec(promptFormat: .xml))
+        let messages = buildMessages(profile: makeProfile(), session: nil, prompt: "Hi",
+                                     context: [], memory: [], userContext: [],
+                                     outputSpec: OutputSpec(promptFormat: .xml))
         let system = messages.first(where: { $0["role"] == "system" })?["content"] ?? ""
         XCTAssertTrue(system.contains("Respond only with valid XML. No prose, no markdown code fences."))
     }
 
     func test_promptFormat_code() {
-        let profile = makeProfile()
-        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi", systemContext: [], extraContext: [], outputSpec: OutputSpec(promptFormat: .code))
+        let messages = buildMessages(profile: makeProfile(), session: nil, prompt: "Hi",
+                                     context: [], memory: [], userContext: [],
+                                     outputSpec: OutputSpec(promptFormat: .code))
         let system = messages.first(where: { $0["role"] == "system" })?["content"] ?? ""
         XCTAssertTrue(system.contains("Respond only with code. No prose, no markdown code fences around it."))
     }
 
-    // MARK: - Memory block
+    // MARK: - Profile memory block
 
     func test_memoriesBlockHeader() {
         let profile = makeProfile(memories: ["Memory one.", "Memory two."])
-        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi", systemContext: [], extraContext: [], outputSpec: .none)
+        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi",
+                                     context: [], memory: [], userContext: [], outputSpec: .none)
         let system = messages.first(where: { $0["role"] == "system" })?["content"] ?? ""
         XCTAssertTrue(system.contains("## Loaded Memories\n\n"), "Memory block must use exact header")
     }
 
     func test_memoriesJoinedWithSingleNewline() {
         let profile = makeProfile(memories: ["Alpha.", "Beta."])
-        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi", systemContext: [], extraContext: [], outputSpec: .none)
+        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi",
+                                     context: [], memory: [], userContext: [], outputSpec: .none)
         let system = messages.first(where: { $0["role"] == "system" })?["content"] ?? ""
-        // Memories joined with \n (single), not \n\n
         XCTAssertTrue(system.contains("Alpha.\nBeta."), "Memories must be joined with single newline")
         XCTAssertFalse(system.contains("Alpha.\n\nBeta."), "Memories must NOT be joined with double newline")
     }
 
     func test_emptyMemoriesIgnored() {
         let profile = makeProfile(memories: ["", "  ", "Real memory."])
-        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi", systemContext: [], extraContext: [], outputSpec: .none)
+        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi",
+                                     context: [], memory: [], userContext: [], outputSpec: .none)
         let system = messages.first(where: { $0["role"] == "system" })?["content"] ?? ""
         XCTAssertTrue(system.contains("Real memory."))
         XCTAssertFalse(system.contains("## Loaded Memories\n\n\n"))
     }
 
-    // MARK: - Extra context
+    // MARK: - User context
 
-    func test_extraContextAppendedToUserMessage() {
-        let profile = makeProfile()
-        let messages = buildMessages(profile: profile, session: nil, prompt: "Prompt", systemContext: [], extraContext: ["Extra info"], outputSpec: .none)
+    func test_userContextAppendedToUserMessage() {
+        let messages = buildMessages(profile: makeProfile(), session: nil, prompt: "Prompt",
+                                     context: [], memory: [], userContext: ["Extra info"], outputSpec: .none)
         let user = messages.last(where: { $0["role"] == "user" })?["content"] ?? ""
-        XCTAssertTrue(user.contains("Prompt"))
-        XCTAssertTrue(user.contains("Extra info"))
         XCTAssertTrue(user.contains("Prompt\n\nExtra info"), "User parts must be joined with \\n\\n")
     }
 
@@ -106,10 +111,84 @@ final class ContextBuilderTests: XCTestCase {
         session.appendTurn(role: .user, content: "Prior user turn")
         session.appendTurn(role: .assistant, content: "Prior assistant turn")
 
-        let profile = makeProfile()
-        let messages = buildMessages(profile: profile, session: session, prompt: "New prompt", systemContext: [], extraContext: [], outputSpec: .none)
+        let messages = buildMessages(profile: makeProfile(), session: session, prompt: "New prompt",
+                                     context: [], memory: [], userContext: [], outputSpec: .none)
         let roles = messages.map { $0["role"]! }
-        // system, user (prior), assistant (prior), user (current)
         XCTAssertEqual(roles, ["system", "user", "assistant", "user"])
+    }
+
+    // MARK: - v2.0.0 dynamic memory block
+
+    func test_dynamicMemoryRenderedUnderMemoryHeader() {
+        let messages = buildMessages(profile: makeProfile(), session: nil, prompt: "Hi",
+                                     context: [], memory: ["User prefers dark mode."],
+                                     userContext: [], outputSpec: .none)
+        let system = messages.first(where: { $0["role"] == "system" })?["content"] ?? ""
+        XCTAssertTrue(system.contains("## Memory\n\nUser prefers dark mode."))
+    }
+
+    func test_profileMemoriesBeforeDynamicMemory() {
+        let profile = makeProfile(memories: ["Static fact."])
+        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi",
+                                     context: [], memory: ["Dynamic fact."],
+                                     userContext: [], outputSpec: .none)
+        let system = messages.first(where: { $0["role"] == "system" })?["content"] ?? ""
+        let loadedIdx = system.range(of: "## Loaded Memories")!.lowerBound
+        let memIdx    = system.range(of: "## Memory")!.lowerBound
+        XCTAssertLessThan(loadedIdx, memIdx)
+    }
+
+    // MARK: - v2.0.0 deduplication
+
+    func test_dynamicMemoryDuplicatingProfileMemoryIsDropped() {
+        let profile = makeProfile(memories: ["Fact A."])
+        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi",
+                                     context: [], memory: ["Fact A.", "Fact B."],
+                                     userContext: [], outputSpec: .none)
+        let system = messages.first(where: { $0["role"] == "system" })?["content"] ?? ""
+        let first  = system.range(of: "Fact A.")!.lowerBound
+        XCTAssertNil(system.range(of: "Fact A.", range: system.index(after: first)..<system.endIndex))
+        XCTAssertTrue(system.contains("Fact B."))
+    }
+
+    func test_duplicateDynamicMemoryEntriesAreDropped() {
+        let messages = buildMessages(profile: makeProfile(), session: nil, prompt: "Hi",
+                                     context: [], memory: ["Note X.", "Note X."],
+                                     userContext: [], outputSpec: .none)
+        let system = messages.first(where: { $0["role"] == "system" })?["content"] ?? ""
+        let first  = system.range(of: "Note X.")!.lowerBound
+        XCTAssertNil(system.range(of: "Note X.", range: system.index(after: first)..<system.endIndex))
+    }
+
+    func test_deduplicationStripsWhitespace() {
+        let profile = makeProfile(memories: ["Fact A."])
+        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi",
+                                     context: [], memory: ["  Fact A.  "],
+                                     userContext: [], outputSpec: .none)
+        let system = messages.first(where: { $0["role"] == "system" })?["content"] ?? ""
+        XCTAssertFalse(system.contains("## Memory"))
+    }
+
+    // MARK: - v2.0.0 trim
+
+    func test_trimsDynamicMemoryTailFirstWhenBudgetExceeded() {
+        let profile = Profile(name: "p", identity: "", rules: "", custom: "", memories: [])
+        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi",
+                                     context: [], memory: ["Short.", String(repeating: "X", count: 500)],
+                                     userContext: [], outputSpec: .none, maxSystemChars: 50)
+        let system = messages.first(where: { $0["role"] == "system" })?["content"] ?? ""
+        XCTAssertTrue(system.contains("Short."))
+        XCTAssertFalse(system.contains(String(repeating: "X", count: 500)))
+    }
+
+    func test_noTrimWhenMaxSystemCharsNotSet() {
+        let profile = Profile(name: "p", identity: "", rules: "", custom: "", memories: [])
+        let messages = buildMessages(profile: profile, session: nil, prompt: "Hi",
+                                     context: [], memory: ["A.", "B.", "C."],
+                                     userContext: [], outputSpec: .none)
+        let system = messages.first(where: { $0["role"] == "system" })?["content"] ?? ""
+        XCTAssertTrue(system.contains("A."))
+        XCTAssertTrue(system.contains("B."))
+        XCTAssertTrue(system.contains("C."))
     }
 }

@@ -107,6 +107,6 @@ final class EngineTests: XCTestCase {
     // MARK: - Spec version
 
     func test_specVersion() {
-        XCTAssertEqual(PriestEngine.specVersion, "1.0.0")
+        XCTAssertEqual(PriestEngine.specVersion, "2.0.0")
     }
 }

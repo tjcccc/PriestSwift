@@ -11,7 +11,7 @@ public final class PriestEngine: Sendable {
 
     /// Spec version this implementation targets. A test should assert this matches
     /// the known spec version to catch sync drift between the spec and this SDK.
-    public static let specVersion = "1.0.0"
+    public static let specVersion = "2.0.0"
 
     private let profileLoader: any ProfileLoader
     private let sessionStore: (any SessionStore)?
@@ -55,9 +55,11 @@ public final class PriestEngine: Sendable {
             profile: profile,
             session: session,
             prompt: request.prompt,
-            systemContext: request.systemContext,
-            extraContext: request.extraContext,
-            outputSpec: request.output
+            context: request.context,
+            memory: request.memory,
+            userContext: request.userContext,
+            outputSpec: request.output,
+            maxSystemChars: request.config.maxSystemChars
         )
 
         // Call provider
@@ -142,9 +144,11 @@ public final class PriestEngine: Sendable {
                         profile: profile,
                         session: session,
                         prompt: request.prompt,
-                        systemContext: request.systemContext,
-                        extraContext: request.extraContext,
-                        outputSpec: request.output
+                        context: request.context,
+                        memory: request.memory,
+                        userContext: request.userContext,
+                        outputSpec: request.output,
+                        maxSystemChars: request.config.maxSystemChars
                     )
 
                     var parts: [String] = []
