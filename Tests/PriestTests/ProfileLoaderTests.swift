@@ -49,15 +49,26 @@ final class ProfileLoaderTests: XCTestCase {
 
     // MARK: - Cache hit
 
-    func test_cacheHit_returnsSameInstanceWhenFilesUnchanged() throws {
-        _ = makeProfileDir(name: "bot", identity: "Bot.")
+    func test_cacheHit_servesStaleContentWhenMtimeUnchanged() throws {
+        let dir = makeProfileDir(name: "bot", identity: "v1.")
+        let profileMd = dir.appendingPathComponent("PROFILE.md")
+
+        // Pin the mtime to a fixed value before the first load so the cache key is deterministic.
+        let pinnedDate = Date(timeIntervalSince1970: 1_700_000_000)
+        try FileManager.default.setAttributes([.modificationDate: pinnedDate], ofItemAtPath: profileMd.path)
+
         let loader = FilesystemProfileLoader(profilesRoot: tmpDir)
-        let first  = try loader.load("bot")
+        let first = try loader.load("bot")
+        XCTAssertEqual(first.identity, "v1.")
+
+        // Overwrite content with "v2." then restore the same pinned mtime.
+        // Both loads call attributesOfItem with the same pinned value → cache key matches.
+        // A no-op cache would re-read the file and return "v2."; a working cache returns "v1.".
+        try "v2.".write(to: profileMd, atomically: false, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: pinnedDate], ofItemAtPath: profileMd.path)
+
         let second = try loader.load("bot")
-        // Same value-type content; verify identity via name equality and that no re-parse occurred
-        // (Profile is a struct so reference equality is not applicable — check content is stable)
-        XCTAssertEqual(first.identity, second.identity)
-        XCTAssertEqual(first.name,     second.name)
+        XCTAssertEqual(second.identity, "v1.", "Cache should serve the stale entry when mtime is unchanged")
     }
 
     // MARK: - Cache invalidation
