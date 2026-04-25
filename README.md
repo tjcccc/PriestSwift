@@ -202,7 +202,27 @@ let request = PriestRequest(
 )
 ```
 
-`providerFormat` activates the provider's native structured-output mode (e.g. Ollama `format` field). `promptFormat` injects a natural-language instruction into the system prompt — it works with any provider.
+`providerFormat` activates the provider's native JSON mode. `promptFormat` injects a natural-language instruction into the system prompt.
+
+For strict schema compliance, use `jsonSchema` instead:
+
+```swift
+let request = PriestRequest(
+    config: config,
+    prompt: "Give me a person object.",
+    output: OutputSpec(
+        jsonSchema: [
+            "type": "object",
+            "properties": ["name": ["type": "string"], "age": ["type": "integer"]],
+            "required": ["name", "age"],
+        ],
+        jsonSchemaName: "person",   // optional, defaults to "response"
+        jsonSchemaStrict: false     // true requires additionalProperties:false on all objects
+    )
+)
+```
+
+`jsonSchema` maps to `response_format:{type:"json_schema"}` for OpenAI-compat, `format:<schema>` for Ollama (v0.5+), and system message injection for Anthropic. It takes precedence over `providerFormat` when both are set.
 
 `PriestResponse.text` is always the raw string. PriestSwift never parses the output.
 

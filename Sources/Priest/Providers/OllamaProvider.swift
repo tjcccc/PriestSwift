@@ -79,7 +79,9 @@ public final class OllamaProvider: ProviderAdapter {
         if let n = config.maxOutputTokens {
             payload["options"] = ["num_predict": n]
         }
-        if outputSpec.providerFormat == .json {
+        if let schema = outputSpec.jsonSchema {
+            payload["format"] = JSONValue.object(schema).toFoundation()
+        } else if outputSpec.providerFormat == .json {
             payload["format"] = "json"
         }
         for (k, v) in config.providerOptions {

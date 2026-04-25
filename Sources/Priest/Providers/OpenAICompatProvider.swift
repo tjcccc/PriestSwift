@@ -89,7 +89,16 @@ public final class OpenAICompatProvider: ProviderAdapter {
             "messages": messages,
         ]
         if let n = config.maxOutputTokens { payload["max_tokens"] = n }
-        if outputSpec.providerFormat == .json {
+        if let schema = outputSpec.jsonSchema {
+            payload["response_format"] = [
+                "type": "json_schema",
+                "json_schema": [
+                    "name":   outputSpec.jsonSchemaName,
+                    "schema": JSONValue.object(schema).toFoundation(),
+                    "strict": outputSpec.jsonSchemaStrict,
+                ] as [String: Any],
+            ]
+        } else if outputSpec.providerFormat == .json {
             payload["response_format"] = ["type": "json_object"]
         }
         if !config.providerOptions.isEmpty {

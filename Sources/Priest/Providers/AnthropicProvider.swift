@@ -27,7 +27,7 @@ public final class AnthropicProvider: ProviderAdapter {
         config: PriestConfig,
         outputSpec: OutputSpec
     ) async throws -> AdapterResult {
-        let payload = buildPayload(messages: messages, config: config)
+        let payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec)
         let data = try await post(path: "/v1/messages", payload: payload, timeout: config.timeoutSeconds)
         let json = try parseJSON(data)
         let contentBlocks = json["content"] as? [[String: Any]] ?? []
@@ -48,7 +48,7 @@ public final class AnthropicProvider: ProviderAdapter {
         config: PriestConfig,
         outputSpec: OutputSpec
     ) -> AsyncThrowingStream<String, Error> {
-        var payload = buildPayload(messages: messages, config: config)
+        var payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec)
         payload["stream"] = true
         return AsyncThrowingStream { continuation in
             Task {
@@ -82,9 +82,15 @@ public final class AnthropicProvider: ProviderAdapter {
 
     // MARK: - Helpers
 
-    private func buildPayload(messages: [[String: String]], config: PriestConfig) -> [String: Any] {
+    private func buildPayload(messages: [[String: String]], config: PriestConfig, outputSpec: OutputSpec) -> [String: Any] {
         // Extract system messages — Anthropic requires them as a top-level field
-        let systemParts = messages.filter { $0["role"] == "system" }.compactMap { $0["content"] }
+        var systemParts = messages.filter { $0["role"] == "system" }.compactMap { $0["content"] }
+        if let schema = outputSpec.jsonSchema,
+           let schemaData = try? JSONSerialization.data(withJSONObject: JSONValue.object(schema).toFoundation(), options: .prettyPrinted),
+           let schemaStr = String(data: schemaData, encoding: .utf8) {
+            let instruction = "Respond with a valid JSON object that conforms to the following JSON Schema:\n\n<schema>\n\(schemaStr)\n</schema>\n\nReturn only the JSON object — no explanation, no markdown fences."
+            systemParts.append(instruction)
+        }
         let turns = messages.filter { $0["role"] != "system" }
 
         var payload: [String: Any] = [
