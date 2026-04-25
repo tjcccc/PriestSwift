@@ -8,7 +8,7 @@ iOS 15+ · macOS 12+ · Swift 5.9+ · Zero external dependencies
 
 ## Overview
 
-PriestSwift is a Swift Package that implements the priest protocol spec v2.0.0 natively — no Python server, no FFI, no network dependency beyond the AI provider itself. It is designed for offline and on-device use cases: iOS apps, macOS tools, Unity (via .NET interop), and any Swift host.
+PriestSwift is a Swift Package that implements the priest protocol spec v2.2.0 natively — no Python server, no FFI, no network dependency beyond the AI provider itself. It is designed for offline and on-device use cases: iOS apps, macOS tools, Unity (via .NET interop), and any Swift host.
 
 The core API is two methods on `PriestEngine`:
 
@@ -267,10 +267,10 @@ Provider keys are arbitrary strings — the key you register in `adapters:` must
 
 ## Spec
 
-PriestSwift targets priest protocol spec **v2.0.0**. The spec lives in the [`priest`](https://github.com/tjcccc/priest) repository under `spec/`. It defines the canonical context assembly algorithm, session schema, timestamp format, and error codes that all priest SDKs must implement identically.
+PriestSwift targets priest protocol spec **v2.2.0**. The spec lives in the [`priest`](https://github.com/tjcccc/priest) repository under `spec/`. It defines the canonical context assembly algorithm, session schema, timestamp format, and error codes that all priest SDKs must implement identically.
 
 ```swift
-PriestEngine.specVersion  // "2.0.0"
+PriestEngine.specVersion  // "2.2.0"
 ```
 
 ---

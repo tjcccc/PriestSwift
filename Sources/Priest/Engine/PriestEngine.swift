@@ -11,7 +11,7 @@ public final class PriestEngine: Sendable {
 
     /// Spec version this implementation targets. A test should assert this matches
     /// the known spec version to catch sync drift between the spec and this SDK.
-    public static let specVersion = "2.0.0"
+    public static let specVersion = "2.2.0"
 
     private let profileLoader: any ProfileLoader
     private let sessionStore: (any SessionStore)?

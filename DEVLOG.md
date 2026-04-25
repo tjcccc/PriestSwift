@@ -26,6 +26,19 @@ Implements the priest protocol spec v1.0.0. Reference implementation: Python `pr
 
 - Added MIT LICENSE
 
+## 2026-04-25 — v2.2.0 — json_schema structured output
+
+Added `jsonSchema`, `jsonSchemaName`, and `jsonSchemaStrict` to `OutputSpec` (uses `[String: JSONValue]` for `Sendable` conformance).
+
+- **OpenAI-compat:** `response_format:{type:"json_schema", json_schema:{name, schema, strict}}` in `buildPayload`.
+- **Ollama (v0.5+):** `format:<schema_dict>` via `JSONValue.object(schema).toFoundation()`.
+- **Anthropic:** schema description injected into system message in `buildPayload`; both `complete` and `stream` paths wired.
+- `jsonSchemaStrict` defaults to `false`.
+- Takes precedence over `providerFormat` when both are set.
+- `PriestEngine.specVersion` → `"2.2.0"`
+
+---
+
 ## 2026-04-20 — v2.0.0 — context API redesign, memory dedup/trim, profile cache
 
 Breaking changes matching priest core v2.0.0 spec.
