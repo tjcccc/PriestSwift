@@ -20,9 +20,11 @@ import Foundation
 /// built-in default profile when `name == "default"`.
 public struct FilesystemProfileLoader: ProfileLoader {
     public let profilesRoot: URL?
+    public let includeMemories: Bool
 
-    public init(profilesRoot: URL? = nil) {
+    public init(profilesRoot: URL? = nil, includeMemories: Bool = true) {
         self.profilesRoot = profilesRoot
+        self.includeMemories = includeMemories
     }
 
     // Box mutable cache in a class so the struct can remain non-mutating.
@@ -51,7 +53,7 @@ public struct FilesystemProfileLoader: ProfileLoader {
     }
 
     private func loadFromDirectory(name: String, dir: URL) throws -> Profile {
-        let (maxMtime, fileCount) = profileCacheKey(dir: dir)
+        let (maxMtime, fileCount) = profileCacheKey(dir: dir, includeMemories: includeMemories)
         if let entry = _cache.entries[name], entry.maxMtime == maxMtime, entry.fileCount == fileCount {
             return entry.profile
         }
@@ -59,7 +61,7 @@ public struct FilesystemProfileLoader: ProfileLoader {
         let identity = try readFile(dir.appendingPathComponent("PROFILE.md"))
         let rules    = readFileOrEmpty(dir.appendingPathComponent("RULES.md"))
         let custom   = readFileOrEmpty(dir.appendingPathComponent("CUSTOM.md"))
-        let memories = loadMemories(from: dir.appendingPathComponent("memories"))
+        let memories = includeMemories ? loadMemories(from: dir.appendingPathComponent("memories")) : []
 
         let profile = Profile(
             name: name,
@@ -73,7 +75,7 @@ public struct FilesystemProfileLoader: ProfileLoader {
         return profile
     }
 
-    private func profileCacheKey(dir: URL) -> (maxMtime: Date, fileCount: Int) {
+    private func profileCacheKey(dir: URL, includeMemories: Bool) -> (maxMtime: Date, fileCount: Int) {
         let fm = FileManager.default
         var candidates: [URL] = [
             dir.appendingPathComponent("PROFILE.md"),
@@ -82,8 +84,9 @@ public struct FilesystemProfileLoader: ProfileLoader {
             dir.appendingPathComponent("profile.toml"),
         ]
         let memoriesDir = dir.appendingPathComponent("memories")
-        if let entries = try? fm.contentsOfDirectory(at: memoriesDir, includingPropertiesForKeys: nil) {
-            candidates += entries
+        if includeMemories,
+           let entries = try? fm.contentsOfDirectory(at: memoriesDir, includingPropertiesForKeys: nil) {
+            candidates += entries.filter { $0.pathExtension == "md" || $0.pathExtension == "txt" }
         }
 
         var maxMtime = Date.distantPast

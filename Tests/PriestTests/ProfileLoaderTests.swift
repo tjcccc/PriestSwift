@@ -103,4 +103,42 @@ final class ProfileLoaderTests: XCTestCase {
         let reloaded = try loader.load("bot")
         XCTAssertEqual(reloaded.rules, "Be concise.")
     }
+
+    func test_loadsProfileMemoriesByDefault() throws {
+        let dir = makeProfileDir(name: "bot", identity: "Bot.")
+        let memoriesDir = dir.appendingPathComponent("memories")
+        try FileManager.default.createDirectory(at: memoriesDir, withIntermediateDirectories: true)
+        try "Remember me.".write(to: memoriesDir.appendingPathComponent("01-facts.md"), atomically: true, encoding: .utf8)
+
+        let loader = FilesystemProfileLoader(profilesRoot: tmpDir)
+        let profile = try loader.load("bot")
+        XCTAssertEqual(profile.memories, ["Remember me."])
+    }
+
+    func test_canDisableProfileMemoryLoading() throws {
+        let dir = makeProfileDir(name: "bot", identity: "Bot.")
+        let memoriesDir = dir.appendingPathComponent("memories")
+        try FileManager.default.createDirectory(at: memoriesDir, withIntermediateDirectories: true)
+        try "Remember me.".write(to: memoriesDir.appendingPathComponent("01-facts.md"), atomically: true, encoding: .utf8)
+
+        let loader = FilesystemProfileLoader(profilesRoot: tmpDir, includeMemories: false)
+        let profile = try loader.load("bot")
+        XCTAssertTrue(profile.memories.isEmpty)
+    }
+
+    func test_cacheKeyIgnoresMemoryFilesWhenDisabled() throws {
+        let dir = makeProfileDir(name: "bot", identity: "Bot.")
+        let loader = FilesystemProfileLoader(profilesRoot: tmpDir, includeMemories: false)
+        let first = try loader.load("bot")
+
+        let memoriesDir = dir.appendingPathComponent("memories")
+        try FileManager.default.createDirectory(at: memoriesDir, withIntermediateDirectories: true)
+        let memoryFile = memoriesDir.appendingPathComponent("01-facts.md")
+        try "New memory.".write(to: memoryFile, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(2)], ofItemAtPath: memoryFile.path)
+
+        let second = try loader.load("bot")
+        XCTAssertEqual(second.identity, first.identity)
+        XCTAssertTrue(second.memories.isEmpty)
+    }
 }

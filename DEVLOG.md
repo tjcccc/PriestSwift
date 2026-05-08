@@ -1,5 +1,13 @@
 # DEVLOG
 
+## 2026-05-08 — v2.3.0 — optional profile memory loading
+
+- Added `FilesystemProfileLoader(profilesRoot:includeMemories:)` so host apps can load profile identity/rules/custom files without injecting `memories/`
+- When memory loading is disabled, `memories/*.md` and `*.txt` files are ignored and not tracked for cache invalidation
+- Updated `PriestEngine.specVersion` to `2.3.0`
+
+---
+
 ## 2026-04-11 — Initial implementation
 
 First implementation of `PriestSwift`, a native Swift Package for iOS (15+) and macOS (12+).

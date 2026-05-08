@@ -8,7 +8,7 @@ iOS 15+ · macOS 12+ · Swift 5.9+ · Zero external dependencies
 
 ## Overview
 
-PriestSwift is a Swift Package that implements the priest protocol spec v2.2.0 natively — no Python server, no FFI, no network dependency beyond the AI provider itself. It is designed for offline and on-device use cases: iOS apps, macOS tools, Unity (via .NET interop), and any Swift host.
+PriestSwift is a Swift Package that implements the priest protocol spec v2.3.0 natively — no Python server, no FFI, no network dependency beyond the AI provider itself. It is designed for offline and on-device use cases: iOS apps, macOS tools, Unity (via .NET interop), and any Swift host.
 
 The core API is two methods on `PriestEngine`:
 
@@ -162,6 +162,7 @@ let loader = FilesystemProfileLoader(profilesRoot: URL(fileURLWithPath: "path/to
 If the named directory or `PROFILE.md` is not found, `FilesystemProfileLoader` falls back to the built-in default profile (a concise, honest assistant persona) when `name == "default"`, and throws `.profileNotFound` for any other name.
 
 The loader caches loaded profiles per instance. Cache key: `(maxMtime, fileCount)` across all profile files. Invalidates automatically when any file changes, is added, or is removed.
+Use `FilesystemProfileLoader(profilesRoot: root, includeMemories: false)` when the host app owns memory selection and passes selected memory through `PriestRequest.memory`. In that mode, `memories/` files are neither loaded nor tracked for cache invalidation.
 
 ---
 
@@ -267,10 +268,10 @@ Provider keys are arbitrary strings — the key you register in `adapters:` must
 
 ## Spec
 
-PriestSwift targets priest protocol spec **v2.2.0**. The spec lives in the [`priest`](https://github.com/tjcccc/priest) repository under `spec/`. It defines the canonical context assembly algorithm, session schema, timestamp format, and error codes that all priest SDKs must implement identically.
+PriestSwift targets priest protocol spec **v2.3.0**. The spec lives in the [`priest`](https://github.com/tjcccc/priest) repository under `spec/`. It defines the canonical context assembly algorithm, session schema, timestamp format, and error codes that all priest SDKs must implement identically.
 
 ```swift
-PriestEngine.specVersion  // "2.2.0"
+PriestEngine.specVersion  // "2.3.0"
 ```
 
 ---
