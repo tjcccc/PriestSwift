@@ -9,6 +9,8 @@ public enum PriestErrorCode: String, Sendable {
     case providerError        = "PROVIDER_ERROR"
     case providerRateLimited  = "PROVIDER_RATE_LIMITED"
     case requestInvalid       = "REQUEST_INVALID"
+    case requestAborted       = "REQUEST_ABORTED"
+    case imageLoadError       = "IMAGE_LOAD_ERROR"
     case internalError        = "INTERNAL_ERROR"
 }
 

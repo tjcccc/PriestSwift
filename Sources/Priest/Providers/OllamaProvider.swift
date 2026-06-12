@@ -15,31 +15,36 @@ public final class OllamaProvider: ProviderAdapter {
     // MARK: - complete
 
     public func complete(
-        messages: [[String: String]],
+        messages: [ChatMessage],
         config: PriestConfig,
-        outputSpec: OutputSpec
+        outputSpec: OutputSpec,
+        options: AdapterCallOptions? = nil
     ) async throws -> AdapterResult {
-        let payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec, stream: false)
+        let payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec, options: options, stream: false)
         let data = try await post(path: "/api/chat", payload: payload, timeout: config.timeoutSeconds)
         let json = try parseJSON(data)
-        let text = (json["message"] as? [String: Any]).flatMap { $0["content"] as? String }
+        let message = json["message"] as? [String: Any]
+        let text = message?["content"] as? String
+        let toolCalls = Self.parseToolCalls(message?["tool_calls"] as? [[String: Any]])
         let doneReason = json["done_reason"] as? String
         return AdapterResult(
             text: text,
-            finishReason: mapFinishReason(doneReason),
+            finishReason: toolCalls != nil ? "tool_calls" : mapFinishReason(doneReason),
             inputTokens: json["prompt_eval_count"] as? Int,
-            outputTokens: json["eval_count"] as? Int
+            outputTokens: json["eval_count"] as? Int,
+            toolCalls: toolCalls
         )
     }
 
     // MARK: - stream
 
     public func stream(
-        messages: [[String: String]],
+        messages: [ChatMessage],
         config: PriestConfig,
-        outputSpec: OutputSpec
+        outputSpec: OutputSpec,
+        options: AdapterCallOptions? = nil
     ) -> AsyncThrowingStream<String, Error> {
-        let payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec, stream: true)
+        let payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec, options: options, stream: true)
         return AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -70,12 +75,25 @@ public final class OllamaProvider: ProviderAdapter {
 
     // MARK: - Helpers
 
-    private func buildPayload(messages: [[String: String]], config: PriestConfig, outputSpec: OutputSpec, stream: Bool) -> [String: Any] {
+    private func buildPayload(messages: [ChatMessage], config: PriestConfig, outputSpec: OutputSpec, options: AdapterCallOptions?, stream: Bool) -> [String: Any] {
         var payload: [String: Any] = [
             "model": config.model,
-            "messages": messages,
+            "messages": Self.buildWireMessages(messages),
             "stream": stream,
         ]
+        if let options, !options.tools.isEmpty {
+            // Ollama accepts OpenAI-shaped tools; it has no tool_choice parameter.
+            payload["tools"] = options.tools.map { tool -> [String: Any] in
+                [
+                    "type": "function",
+                    "function": [
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.parameters.map { foundationObject(from: $0) } ?? [:],
+                    ] as [String: Any],
+                ]
+            }
+        }
         if let n = config.maxOutputTokens {
             payload["options"] = ["num_predict": n]
         }
@@ -128,6 +146,40 @@ public final class OllamaProvider: ProviderAdapter {
             throw PriestError.providerError(providerName, message: "Invalid JSON response")
         }
         return obj
+    }
+
+    private static func buildWireMessages(_ messages: [ChatMessage]) -> [[String: Any]] {
+        messages.map { m -> [String: Any] in
+            if m.role == "tool" {
+                // Ollama correlates tool results by tool_name, not call id.
+                return ["role": "tool", "content": m.content, "tool_name": m.name ?? ""]
+            }
+            if m.role == "assistant", let calls = m.toolCalls, !calls.isEmpty {
+                // Synthesized call ids are dropped on the wire.
+                return [
+                    "role": "assistant",
+                    "content": m.content,
+                    "tool_calls": calls.map { ["function": ["name": $0.name, "arguments": foundationObject(from: $0.arguments)] as [String: Any]] },
+                ]
+            }
+            return ["role": m.role, "content": m.content]
+        }
+    }
+
+    /// Parse Ollama wire tool calls, synthesizing ids "call_N" in order.
+    private static func parseToolCalls(_ raw: [[String: Any]]?) -> [ToolCall]? {
+        guard let raw, !raw.isEmpty else { return nil }
+        var calls: [ToolCall] = []
+        for item in raw {
+            guard let function = item["function"] as? [String: Any],
+                  let name = function["name"] as? String, !name.isEmpty else { continue }
+            calls.append(ToolCall(
+                id: "call_\(calls.count)",
+                name: name,
+                arguments: jsonValueObject(fromFoundation: function["arguments"])
+            ))
+        }
+        return calls.isEmpty ? nil : calls
     }
 
     private func mapFinishReason(_ reason: String?) -> String? {

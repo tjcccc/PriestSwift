@@ -1,5 +1,20 @@
 # DEVLOG
 
+## 2026-06-12 — v2.4.0 — tool calling, structured streaming (spec 2.4.0 sync)
+
+Syncs the spec 2.4.0 features (reference: priest-typescript / Python priest-core 2.4.0).
+
+- **Tool calling (caller executes):** `PriestRequest.tools` / `toolChoice` / `toolExchange`, `PriestResponse.toolCalls`, `FinishedReason.toolCalls`. Wire mappings for all three providers (OpenAI tools with JSON-string arguments, Anthropic tool_use/tool_result with merged user messages, Ollama tools with synthesized `call_N` ids and `tool_name` results). Tool exchange turns are never persisted in sessions.
+- **`runWithTools()`:** generic call → execute → re-call loop with caller executor, optional `onToolCall` approval hook, iteration cap, and exchange trace.
+- **`PriestEngine.streamEvents()`:** structured streaming (`text_delta`, `tool_call_start/delta/end`, `usage`, `done` with full `PriestResponse`); adapters without native event streaming fall back via the protocol extension; native streaming tool-call deltas are not yet surfaced by the built-in providers — use `run()` / `runWithTools()` for tool calling.
+- **Breaking for adapter implementers:** provider messages changed from `[[String: String]]` to the new `ChatMessage` struct (which keeps a `["role"]`/`["content"]` subscript for read compatibility), and `complete`/`stream` gained an `options: AdapterCallOptions?` parameter.
+- **Cancellation:** Swift maps the spec's cancellation concept to native Task cancellation; `requestAborted` and `imageLoadError` error codes added for table parity.
+- `PriestEngine.specVersion` → "2.4.0". New tests in `ToolCallingTests`.
+
+Known gap: multimodal `ImageInput` (spec 2.0) is still not implemented in this SDK.
+
+---
+
 ## 2026-05-08 — v2.3.0 — optional profile memory loading
 
 - Added `FilesystemProfileLoader(profilesRoot:includeMemories:)` so host apps can load profile identity/rules/custom files without injecting `memories/`

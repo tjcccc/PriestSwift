@@ -19,6 +19,13 @@ public struct PriestRequest: Sendable {
     public var output: OutputSpec
     /// Arbitrary caller metadata. Echoed unchanged into PriestResponse.metadata.
     public var metadata: [String: JSONValue]
+    /// Tools the model may call. The caller executes them; the library transports (spec 2.4.0).
+    public var tools: [ToolDefinition]
+    /// Tool selection behavior. Only meaningful when tools is non-empty.
+    public var toolChoice: ToolChoice?
+    /// Tool loop history for the CURRENT user turn, appended after the user
+    /// message. Never persisted in sessions. See spec behavior/tool-calling.md.
+    public var toolExchange: [ToolExchangeTurn]
 
     public init(
         config: PriestConfig,
@@ -29,7 +36,10 @@ public struct PriestRequest: Sendable {
         memory: [String] = [],
         userContext: [String] = [],
         output: OutputSpec = .none,
-        metadata: [String: JSONValue] = [:]
+        metadata: [String: JSONValue] = [:],
+        tools: [ToolDefinition] = [],
+        toolChoice: ToolChoice? = nil,
+        toolExchange: [ToolExchangeTurn] = []
     ) {
         self.config = config
         self.prompt = prompt
@@ -40,5 +50,8 @@ public struct PriestRequest: Sendable {
         self.userContext = userContext
         self.output = output
         self.metadata = metadata
+        self.tools = tools
+        self.toolChoice = toolChoice
+        self.toolExchange = toolExchange
     }
 }

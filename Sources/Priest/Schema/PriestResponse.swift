@@ -2,6 +2,7 @@
 public enum FinishedReason: String, Sendable {
     case stop
     case length
+    case toolCalls = "tool_calls"
     case error
     case unknown
 }
@@ -49,6 +50,10 @@ public struct PriestResponse: Sendable {
     /// Raw text returned by the provider. Always the unmodified string.
     /// Nil on error or when the provider returned no content.
     public let text: String?
+    /// Tool calls requested by the model (spec 2.4.0). Non-nil exactly when
+    /// execution.finishedReason is .toolCalls. The caller executes them and
+    /// re-runs with the results appended to PriestRequest.toolExchange.
+    public let toolCalls: [ToolCall]?
     public let execution: ExecutionInfo
     /// Token usage. Nil if the provider did not report usage data.
     public let usage: UsageInfo?

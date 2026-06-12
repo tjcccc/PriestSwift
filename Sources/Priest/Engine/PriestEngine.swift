@@ -11,7 +11,7 @@ public final class PriestEngine: Sendable {
 
     /// Spec version this implementation targets. A test should assert this matches
     /// the known spec version to catch sync drift between the spec and this SDK.
-    public static let specVersion = "2.3.0"
+    public static let specVersion = "2.4.0"
 
     private let profileLoader: any ProfileLoader
     private let sessionStore: (any SessionStore)?
@@ -59,22 +59,31 @@ public final class PriestEngine: Sendable {
             memory: request.memory,
             userContext: request.userContext,
             outputSpec: request.output,
-            maxSystemChars: request.config.maxSystemChars
+            maxSystemChars: request.config.maxSystemChars,
+            toolExchange: request.toolExchange
         )
 
         // Call provider
         var text: String? = nil
+        var toolCalls: [ToolCall]? = nil
         var finishReason: String? = nil
         var inputTokens: Int? = nil
         var outputTokens: Int? = nil
         var errorModel: PriestErrorModel? = nil
 
         do {
-            let result = try await adapter.complete(messages: messages, config: request.config, outputSpec: request.output)
+            let result = try await adapter.complete(
+                messages: messages,
+                config: request.config,
+                outputSpec: request.output,
+                options: Self.callOptions(for: request)
+            )
             text = result.text
+            toolCalls = (result.toolCalls?.isEmpty == false) ? result.toolCalls : nil
             finishReason = result.finishReason
             inputTokens = result.inputTokens
             outputTokens = result.outputTokens
+            if toolCalls != nil { finishReason = "tool_calls" }
         } catch let e as PriestError {
             finishReason = "error"
             errorModel = PriestErrorModel(code: e.code.rawValue, message: e.message, details: e.details)
@@ -83,12 +92,15 @@ public final class PriestEngine: Sendable {
             errorModel = PriestErrorModel(code: PriestErrorCode.internalError.rawValue, message: error.localizedDescription, details: [:])
         }
 
-        // Save session on success
+        // Save session on success. Tool-call iterations are turn-local: persist
+        // only when the model produced a final answer (spec behavior/tool-calling.md).
         var sessionInfo: SessionInfo? = nil
         if let session = session, let store = sessionStore, errorModel == nil {
-            session.appendTurn(role: .user, content: request.prompt)
-            if let t = text { session.appendTurn(role: .assistant, content: t) }
-            try await store.save(session)
+            if toolCalls == nil {
+                session.appendTurn(role: .user, content: request.prompt)
+                if let t = text { session.appendTurn(role: .assistant, content: t) }
+                try await store.save(session)
+            }
             sessionInfo = SessionInfo(id: session.id, isNew: isNewSession, turnCount: session.turns.count)
         }
 
@@ -107,6 +119,7 @@ public final class PriestEngine: Sendable {
 
         return PriestResponse(
             text: text,
+            toolCalls: toolCalls,
             execution: ExecutionInfo(
                 provider: request.config.provider,
                 model: request.config.model,
@@ -148,11 +161,17 @@ public final class PriestEngine: Sendable {
                         memory: request.memory,
                         userContext: request.userContext,
                         outputSpec: request.output,
-                        maxSystemChars: request.config.maxSystemChars
+                        maxSystemChars: request.config.maxSystemChars,
+                        toolExchange: request.toolExchange
                     )
 
                     var parts: [String] = []
-                    for try await chunk in adapter.stream(messages: messages, config: request.config, outputSpec: request.output) {
+                    for try await chunk in adapter.stream(
+                        messages: messages,
+                        config: request.config,
+                        outputSpec: request.output,
+                        options: Self.callOptions(for: request)
+                    ) {
                         parts.append(chunk)
                         continuation.yield(chunk)
                     }
@@ -171,6 +190,146 @@ public final class PriestEngine: Sendable {
                 }
             }
         }
+    }
+
+    // MARK: - Structured streaming (spec 2.4.0)
+
+    /// Yield structured streaming events: text deltas, tool-call progress,
+    /// usage, and a terminal "done" event carrying the full PriestResponse.
+    /// Provider errors surface in done.response?.error rather than being
+    /// thrown, matching run() semantics.
+    public func streamEvents(_ request: PriestRequest) -> AsyncThrowingStream<PriestStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let startMs = Int(Date().timeIntervalSince1970 * 1000)
+                    guard let adapter = self.adapters[request.config.provider] else {
+                        throw PriestError.providerNotRegistered(request.config.provider)
+                    }
+                    let profile = try self.profileLoader.load(request.profile)
+                    let (session, isNewSession) = try await self.resolveSession(request: request)
+                    let messages = buildMessages(
+                        profile: profile,
+                        session: session,
+                        prompt: request.prompt,
+                        context: request.context,
+                        memory: request.memory,
+                        userContext: request.userContext,
+                        outputSpec: request.output,
+                        maxSystemChars: request.config.maxSystemChars,
+                        toolExchange: request.toolExchange
+                    )
+
+                    var textParts: [String] = []
+                    var toolCalls: [ToolCall] = []
+                    var finishReason: String? = nil
+                    var inputTokens: Int? = nil
+                    var outputTokens: Int? = nil
+                    var errorModel: PriestErrorModel? = nil
+
+                    do {
+                        for try await event in adapter.streamEvents(
+                            messages: messages,
+                            config: request.config,
+                            outputSpec: request.output,
+                            options: Self.callOptions(for: request)
+                        ) {
+                            switch event.type {
+                            case "text_delta":
+                                if let text = event.text, !text.isEmpty {
+                                    textParts.append(text)
+                                    var out = PriestStreamEvent(type: "text_delta")
+                                    out.text = text
+                                    continuation.yield(out)
+                                }
+                            case "tool_call_start", "tool_call_delta":
+                                var out = PriestStreamEvent(type: event.type)
+                                out.index = event.index
+                                out.id = event.id
+                                out.name = event.name
+                                out.argumentsDelta = event.argumentsDelta
+                                continuation.yield(out)
+                            case "tool_call_end":
+                                if let call = event.toolCall {
+                                    toolCalls.append(call)
+                                    var out = PriestStreamEvent(type: "tool_call_end")
+                                    out.index = event.index
+                                    out.toolCall = call
+                                    continuation.yield(out)
+                                }
+                            case "usage":
+                                inputTokens = event.inputTokens ?? inputTokens
+                                outputTokens = event.outputTokens ?? outputTokens
+                                var out = PriestStreamEvent(type: "usage")
+                                out.inputTokens = inputTokens
+                                out.outputTokens = outputTokens
+                                continuation.yield(out)
+                            case "finish":
+                                finishReason = event.finishReason ?? finishReason
+                            default:
+                                break
+                            }
+                        }
+                    } catch let e as PriestError {
+                        finishReason = "error"
+                        errorModel = PriestErrorModel(code: e.code.rawValue, message: e.message, details: e.details)
+                    } catch {
+                        finishReason = "error"
+                        errorModel = PriestErrorModel(code: PriestErrorCode.internalError.rawValue, message: error.localizedDescription, details: [:])
+                    }
+
+                    let text = textParts.isEmpty ? nil : textParts.joined()
+                    if !toolCalls.isEmpty && finishReason != "error" { finishReason = "tool_calls" }
+
+                    var sessionInfo: SessionInfo? = nil
+                    if let session = session, let store = self.sessionStore, errorModel == nil {
+                        if toolCalls.isEmpty, let fullText = text {
+                            session.appendTurn(role: .user, content: request.prompt)
+                            session.appendTurn(role: .assistant, content: fullText)
+                            try await store.save(session)
+                        }
+                        sessionInfo = SessionInfo(id: session.id, isNew: isNewSession, turnCount: session.turns.count)
+                    }
+
+                    var usage: UsageInfo? = nil
+                    if inputTokens != nil || outputTokens != nil {
+                        let total = (inputTokens ?? 0) + (outputTokens ?? 0)
+                        usage = UsageInfo(
+                            inputTokens: inputTokens,
+                            outputTokens: outputTokens,
+                            totalTokens: total > 0 ? total : nil,
+                            estimatedCostUSD: nil
+                        )
+                    }
+
+                    let response = PriestResponse(
+                        text: text,
+                        toolCalls: toolCalls.isEmpty ? nil : toolCalls,
+                        execution: ExecutionInfo(
+                            provider: request.config.provider,
+                            model: request.config.model,
+                            latencyMs: Int(Date().timeIntervalSince1970 * 1000) - startMs,
+                            profile: request.profile,
+                            finishedReason: finishReason.flatMap { FinishedReason(rawValue: $0) }
+                        ),
+                        usage: usage,
+                        session: sessionInfo,
+                        error: errorModel,
+                        metadata: request.metadata
+                    )
+                    var done = PriestStreamEvent(type: "done")
+                    done.response = response
+                    continuation.yield(done)
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    private static func callOptions(for request: PriestRequest) -> AdapterCallOptions? {
+        request.tools.isEmpty ? nil : AdapterCallOptions(tools: request.tools, toolChoice: request.toolChoice)
     }
 
     // MARK: - Session resolution

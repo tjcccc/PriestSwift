@@ -21,34 +21,38 @@ public final class OpenAICompatProvider: ProviderAdapter {
     // MARK: - complete
 
     public func complete(
-        messages: [[String: String]],
+        messages: [ChatMessage],
         config: PriestConfig,
-        outputSpec: OutputSpec
+        outputSpec: OutputSpec,
+        options: AdapterCallOptions? = nil
     ) async throws -> AdapterResult {
-        let payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec)
+        let payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec, options: options)
         let data = try await post(path: "/v1/chat/completions", payload: payload, timeout: config.timeoutSeconds)
         let json = try parseJSON(data)
         let choices = json["choices"] as? [[String: Any]] ?? []
         let message = choices.first.flatMap { $0["message"] as? [String: Any] }
         let text = message?["content"] as? String
+        let toolCalls = Self.parseToolCalls(message?["tool_calls"] as? [[String: Any]])
         let finishReason = choices.first?["finish_reason"] as? String
         let usage = json["usage"] as? [String: Any]
         return AdapterResult(
             text: text,
-            finishReason: mapFinishReason(finishReason),
+            finishReason: toolCalls != nil ? "tool_calls" : mapFinishReason(finishReason),
             inputTokens: usage?["prompt_tokens"] as? Int,
-            outputTokens: usage?["completion_tokens"] as? Int
+            outputTokens: usage?["completion_tokens"] as? Int,
+            toolCalls: toolCalls
         )
     }
 
     // MARK: - stream
 
     public func stream(
-        messages: [[String: String]],
+        messages: [ChatMessage],
         config: PriestConfig,
-        outputSpec: OutputSpec
+        outputSpec: OutputSpec,
+        options: AdapterCallOptions? = nil
     ) -> AsyncThrowingStream<String, Error> {
-        var payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec)
+        var payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec, options: options)
         payload["stream"] = true
         return AsyncThrowingStream { continuation in
             Task {
@@ -83,11 +87,31 @@ public final class OpenAICompatProvider: ProviderAdapter {
 
     // MARK: - Helpers
 
-    private func buildPayload(messages: [[String: String]], config: PriestConfig, outputSpec: OutputSpec) -> [String: Any] {
+    private func buildPayload(messages: [ChatMessage], config: PriestConfig, outputSpec: OutputSpec, options: AdapterCallOptions?) -> [String: Any] {
         var payload: [String: Any] = [
             "model": config.model,
-            "messages": messages,
+            "messages": Self.buildWireMessages(messages),
         ]
+        if let options, !options.tools.isEmpty {
+            payload["tools"] = options.tools.map { tool -> [String: Any] in
+                [
+                    "type": "function",
+                    "function": [
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.parameters.map { foundationObject(from: $0) } ?? [:],
+                    ] as [String: Any],
+                ]
+            }
+            if let choice = options.toolChoice {
+                switch choice {
+                case .auto: payload["tool_choice"] = "auto"
+                case .none: payload["tool_choice"] = "none"
+                case .required: payload["tool_choice"] = "required"
+                case let .tool(name): payload["tool_choice"] = ["type": "function", "function": ["name": name]]
+                }
+            }
+        }
         if let n = config.maxOutputTokens { payload["max_tokens"] = n }
         if let schema = outputSpec.jsonSchema {
             payload["response_format"] = [
@@ -149,12 +173,53 @@ public final class OpenAICompatProvider: ProviderAdapter {
         return obj
     }
 
+    private static func buildWireMessages(_ messages: [ChatMessage]) -> [[String: Any]] {
+        messages.map { m -> [String: Any] in
+            if m.role == "tool" {
+                return ["role": "tool", "tool_call_id": m.toolCallId ?? "", "content": m.content]
+            }
+            if m.role == "assistant", let calls = m.toolCalls, !calls.isEmpty {
+                var out: [String: Any] = [
+                    "role": "assistant",
+                    "tool_calls": calls.map { call -> [String: Any] in
+                        [
+                            "id": call.id,
+                            "type": "function",
+                            "function": ["name": call.name, "arguments": argumentsJSONString(call.arguments)],
+                        ]
+                    },
+                ]
+                if !m.content.isEmpty { out["content"] = m.content } else { out["content"] = NSNull() }
+                return out
+            }
+            return ["role": m.role, "content": m.content]
+        }
+    }
+
+    /// Parse non-streaming wire tool calls. Unparseable argument JSON becomes {}.
+    private static func parseToolCalls(_ raw: [[String: Any]]?) -> [ToolCall]? {
+        guard let raw, !raw.isEmpty else { return nil }
+        var calls: [ToolCall] = []
+        for (i, item) in raw.enumerated() {
+            guard let function = item["function"] as? [String: Any],
+                  let name = function["name"] as? String, !name.isEmpty else { continue }
+            calls.append(ToolCall(
+                id: (item["id"] as? String) ?? "call_\(i)",
+                name: name,
+                arguments: parseToolArguments(function["arguments"] as? String ?? "")
+            ))
+        }
+        return calls.isEmpty ? nil : calls
+    }
+
     private func mapFinishReason(_ reason: String?) -> String? {
         guard let reason else { return nil }
         switch reason {
-        case "stop":   return "stop"
-        case "length": return "length"
-        default:       return "unknown"
+        case "stop":           return "stop"
+        case "length":         return "length"
+        case "content_filter": return "content_filter"
+        case "tool_calls":     return "tool_calls"
+        default:               return "unknown"
         }
     }
 }

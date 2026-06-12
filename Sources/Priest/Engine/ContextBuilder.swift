@@ -28,8 +28,9 @@ func buildMessages(
     memory: [String],
     userContext: [String],
     outputSpec: OutputSpec,
-    maxSystemChars: Int? = nil
-) -> [[String: String]] {
+    maxSystemChars: Int? = nil,
+    toolExchange: [ToolExchangeTurn] = []
+) -> [ChatMessage] {
 
     // Step 1 — normalize profile memories
     var profileMemories = profile.memories
@@ -71,15 +72,15 @@ func buildMessages(
     )
 
     // Step 5 — build message list
-    var messages: [[String: String]] = []
+    var messages: [ChatMessage] = []
 
     if !systemContent.isEmpty {
-        messages.append(["role": "system", "content": systemContent])
+        messages.append(ChatMessage(role: "system", content: systemContent))
     }
 
     if let session = session {
         for turn in session.turns {
-            messages.append(["role": turn.role.rawValue, "content": turn.content])
+            messages.append(ChatMessage(role: turn.role.rawValue, content: turn.content))
         }
     }
 
@@ -87,7 +88,18 @@ func buildMessages(
     for ctx in userContext where !ctx.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         userParts.append(ctx)
     }
-    messages.append(["role": "user", "content": userParts.joined(separator: sectionSeparator)])
+    messages.append(ChatMessage(role: "user", content: userParts.joined(separator: sectionSeparator)))
+
+    // Tool loop history for the current turn (spec 2.4.0). Appended after the
+    // user message, never persisted in sessions.
+    for turn in toolExchange {
+        switch turn {
+        case let .assistant(text, toolCalls):
+            messages.append(ChatMessage(role: "assistant", content: text ?? "", toolCalls: toolCalls))
+        case let .toolResult(toolCallId, name, content, _):
+            messages.append(ChatMessage(role: "tool", content: content, toolCallId: toolCallId, name: name))
+        }
+    }
 
     return messages
 }

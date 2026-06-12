@@ -23,32 +23,36 @@ public final class AnthropicProvider: ProviderAdapter {
     // MARK: - complete
 
     public func complete(
-        messages: [[String: String]],
+        messages: [ChatMessage],
         config: PriestConfig,
-        outputSpec: OutputSpec
+        outputSpec: OutputSpec,
+        options: AdapterCallOptions? = nil
     ) async throws -> AdapterResult {
-        let payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec)
+        let payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec, options: options)
         let data = try await post(path: "/v1/messages", payload: payload, timeout: config.timeoutSeconds)
         let json = try parseJSON(data)
         let contentBlocks = json["content"] as? [[String: Any]] ?? []
         let text = contentBlocks.first(where: { $0["type"] as? String == "text" }).flatMap { $0["text"] as? String }
+        let toolCalls = Self.parseToolUseBlocks(contentBlocks)
         let usage = json["usage"] as? [String: Any]
         return AdapterResult(
             text: text,
-            finishReason: mapFinishReason(json["stop_reason"] as? String),
+            finishReason: toolCalls != nil ? "tool_calls" : mapFinishReason(json["stop_reason"] as? String),
             inputTokens: usage?["input_tokens"] as? Int,
-            outputTokens: usage?["output_tokens"] as? Int
+            outputTokens: usage?["output_tokens"] as? Int,
+            toolCalls: toolCalls
         )
     }
 
     // MARK: - stream
 
     public func stream(
-        messages: [[String: String]],
+        messages: [ChatMessage],
         config: PriestConfig,
-        outputSpec: OutputSpec
+        outputSpec: OutputSpec,
+        options: AdapterCallOptions? = nil
     ) -> AsyncThrowingStream<String, Error> {
-        var payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec)
+        var payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec, options: options)
         payload["stream"] = true
         return AsyncThrowingStream { continuation in
             Task {
@@ -82,16 +86,16 @@ public final class AnthropicProvider: ProviderAdapter {
 
     // MARK: - Helpers
 
-    private func buildPayload(messages: [[String: String]], config: PriestConfig, outputSpec: OutputSpec) -> [String: Any] {
+    private func buildPayload(messages: [ChatMessage], config: PriestConfig, outputSpec: OutputSpec, options: AdapterCallOptions?) -> [String: Any] {
         // Extract system messages — Anthropic requires them as a top-level field
-        var systemParts = messages.filter { $0["role"] == "system" }.compactMap { $0["content"] }
+        var systemParts = messages.filter { $0.role == "system" }.map { $0.content }
         if let schema = outputSpec.jsonSchema,
            let schemaData = try? JSONSerialization.data(withJSONObject: JSONValue.object(schema).toFoundation(), options: .prettyPrinted),
            let schemaStr = String(data: schemaData, encoding: .utf8) {
             let instruction = "Respond with a valid JSON object that conforms to the following JSON Schema:\n\n<schema>\n\(schemaStr)\n</schema>\n\nReturn only the JSON object — no explanation, no markdown fences."
             systemParts.append(instruction)
         }
-        let turns = messages.filter { $0["role"] != "system" }
+        let turns = Self.buildWireTurns(messages.filter { $0.role != "system" })
 
         var payload: [String: Any] = [
             "model": config.model,
@@ -101,10 +105,88 @@ public final class AnthropicProvider: ProviderAdapter {
         if !systemParts.isEmpty {
             payload["system"] = systemParts.joined(separator: "\n\n")
         }
+        if let options, !options.tools.isEmpty {
+            payload["tools"] = options.tools.map { tool -> [String: Any] in
+                [
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.parameters.map { foundationObject(from: $0) }
+                        ?? ["type": "object", "properties": [String: Any]()],
+                ]
+            }
+            if let choice = options.toolChoice {
+                switch choice {
+                case .auto: payload["tool_choice"] = ["type": "auto"]
+                case .none: payload["tool_choice"] = ["type": "none"]
+                case .required: payload["tool_choice"] = ["type": "any"]
+                case let .tool(name): payload["tool_choice"] = ["type": "tool", "name": name]
+                }
+            }
+        }
         for (k, v) in config.providerOptions {
             payload[k] = v.toFoundation()
         }
         return payload
+    }
+
+    /// Translate messages to Anthropic wire format. Tool results merge into a
+    /// user message of tool_result blocks (Anthropic requires alternating
+    /// roles); assistant tool calls become tool_use content blocks.
+    private static func buildWireTurns(_ messages: [ChatMessage]) -> [[String: Any]] {
+        var turns: [[String: Any]] = []
+        var pendingToolResults: [[String: Any]] = []
+
+        func flushToolResults() {
+            if !pendingToolResults.isEmpty {
+                turns.append(["role": "user", "content": pendingToolResults])
+                pendingToolResults = []
+            }
+        }
+
+        for m in messages {
+            if m.role == "tool" {
+                pendingToolResults.append([
+                    "type": "tool_result",
+                    "tool_use_id": m.toolCallId ?? "",
+                    "content": m.content,
+                ])
+                continue
+            }
+            flushToolResults()
+            if m.role == "assistant", let calls = m.toolCalls, !calls.isEmpty {
+                var blocks: [[String: Any]] = []
+                if !m.content.isEmpty {
+                    blocks.append(["type": "text", "text": m.content])
+                }
+                for call in calls {
+                    blocks.append([
+                        "type": "tool_use",
+                        "id": call.id,
+                        "name": call.name,
+                        "input": foundationObject(from: call.arguments),
+                    ])
+                }
+                turns.append(["role": "assistant", "content": blocks])
+                continue
+            }
+            turns.append(["role": m.role, "content": m.content])
+        }
+        flushToolResults()
+        return turns
+    }
+
+    private static func parseToolUseBlocks(_ content: [[String: Any]]) -> [ToolCall]? {
+        var calls: [ToolCall] = []
+        for (i, block) in content.enumerated() {
+            guard block["type"] as? String == "tool_use",
+                  let name = block["name"] as? String, !name.isEmpty else { continue }
+            calls.append(ToolCall(
+                id: (block["id"] as? String) ?? "call_\(i)",
+                name: name,
+                arguments: jsonValueObject(fromFoundation: block["input"])
+            ))
+        }
+        return calls.isEmpty ? nil : calls
     }
 
     private func buildRequest(path: String, payload: [String: Any], timeout: Double) throws -> URLRequest {
@@ -154,6 +236,7 @@ public final class AnthropicProvider: ProviderAdapter {
         switch reason {
         case "end_turn", "stop_sequence": return "stop"
         case "max_tokens":                return "length"
+        case "tool_use":                  return "tool_calls"
         default:                          return "unknown"
         }
     }

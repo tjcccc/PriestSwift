@@ -12,7 +12,7 @@ final class MockAdapter: ProviderAdapter {
         self.finishReason = finishReason
     }
 
-    func complete(messages: [[String: String]], config: PriestConfig, outputSpec: OutputSpec) async throws -> AdapterResult {
+    func complete(messages: [ChatMessage], config: PriestConfig, outputSpec: OutputSpec, options: AdapterCallOptions? = nil) async throws -> AdapterResult {
         AdapterResult(text: text, finishReason: finishReason, inputTokens: 10, outputTokens: 5)
     }
 
@@ -28,11 +28,11 @@ final class MockStreamingAdapter: ProviderAdapter {
         self.text = text
     }
 
-    func complete(messages: [[String: String]], config: PriestConfig, outputSpec: OutputSpec) async throws -> AdapterResult {
+    func complete(messages: [ChatMessage], config: PriestConfig, outputSpec: OutputSpec, options: AdapterCallOptions? = nil) async throws -> AdapterResult {
         AdapterResult(text: text, finishReason: "stop", inputTokens: 10, outputTokens: 5)
     }
 
-    func stream(messages: [[String: String]], config: PriestConfig, outputSpec: OutputSpec) -> AsyncThrowingStream<String, Error> {
+    func stream(messages: [ChatMessage], config: PriestConfig, outputSpec: OutputSpec, options: AdapterCallOptions? = nil) -> AsyncThrowingStream<String, Error> {
         let words = text.split(separator: " ").map(String.init)
         return AsyncThrowingStream { continuation in
             Task {
@@ -40,5 +40,29 @@ final class MockStreamingAdapter: ProviderAdapter {
                 continuation.finish()
             }
         }
+    }
+}
+
+
+/// Adapter scripted with a sequence of AdapterResults, one per complete()
+/// call. Records every messages list and call options it receives.
+final class ScriptedAdapter: ProviderAdapter, @unchecked Sendable {
+    let providerName = "mock"
+    private let results: [AdapterResult]
+    private var cursor = 0
+    private(set) var calls: [(messages: [ChatMessage], options: AdapterCallOptions?)] = []
+    private let lock = NSLock()
+
+    init(results: [AdapterResult]) {
+        self.results = results
+    }
+
+    func complete(messages: [ChatMessage], config: PriestConfig, outputSpec: OutputSpec, options: AdapterCallOptions? = nil) async throws -> AdapterResult {
+        lock.lock()
+        defer { lock.unlock() }
+        calls.append((messages, options))
+        let result = results[min(cursor, results.count - 1)]
+        cursor += 1
+        return result
     }
 }
