@@ -4,6 +4,8 @@ public struct AdapterResult: Sendable {
     public let finishReason: String?
     public let inputTokens: Int?
     public let outputTokens: Int?
+    /// Prompt-cache hit count (spec 2.5.0). Nil when the provider omits it.
+    public let cachedInputTokens: Int?
     /// Tool calls requested by the model (spec 2.4.0). Nil when there are none.
     public let toolCalls: [ToolCall]?
 
@@ -12,12 +14,14 @@ public struct AdapterResult: Sendable {
         finishReason: String? = nil,
         inputTokens: Int? = nil,
         outputTokens: Int? = nil,
+        cachedInputTokens: Int? = nil,
         toolCalls: [ToolCall]? = nil
     ) {
         self.text = text
         self.finishReason = finishReason
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
+        self.cachedInputTokens = cachedInputTokens
         self.toolCalls = toolCalls
     }
 }

@@ -11,6 +11,7 @@ public struct PriestStreamEvent: Sendable {
     public var toolCall: ToolCall?
     public var inputTokens: Int?
     public var outputTokens: Int?
+    public var cachedInputTokens: Int?
     public var response: PriestResponse?
 
     public init(type: String) {

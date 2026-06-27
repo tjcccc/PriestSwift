@@ -23,6 +23,8 @@ public struct UsageInfo: Sendable {
     public let outputTokens: Int?
     /// inputTokens + outputTokens. Nil if both are nil.
     public let totalTokens: Int?
+    /// Prompt-cache hit count (spec 2.5.0). Nil when the provider omits it.
+    public let cachedInputTokens: Int?
     public let estimatedCostUSD: Double?
 }
 

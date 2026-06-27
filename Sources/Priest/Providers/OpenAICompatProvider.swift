@@ -40,6 +40,7 @@ public final class OpenAICompatProvider: ProviderAdapter {
             finishReason: toolCalls != nil ? "tool_calls" : mapFinishReason(finishReason),
             inputTokens: usage?["prompt_tokens"] as? Int,
             outputTokens: usage?["completion_tokens"] as? Int,
+            cachedInputTokens: (usage?["prompt_tokens_details"] as? [String: Any])?["cached_tokens"] as? Int,
             toolCalls: toolCalls
         )
     }
@@ -52,8 +53,7 @@ public final class OpenAICompatProvider: ProviderAdapter {
         outputSpec: OutputSpec,
         options: AdapterCallOptions? = nil
     ) -> AsyncThrowingStream<String, Error> {
-        var payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec, options: options)
-        payload["stream"] = true
+        let payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec, options: options, stream: true)
         return AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -87,11 +87,19 @@ public final class OpenAICompatProvider: ProviderAdapter {
 
     // MARK: - Helpers
 
-    private func buildPayload(messages: [ChatMessage], config: PriestConfig, outputSpec: OutputSpec, options: AdapterCallOptions?) -> [String: Any] {
+    func buildPayload(messages: [ChatMessage], config: PriestConfig, outputSpec: OutputSpec, options: AdapterCallOptions?, stream: Bool = false) -> [String: Any] {
         var payload: [String: Any] = [
             "model": config.model,
             "messages": Self.buildWireMessages(messages),
         ]
+        if stream {
+            payload["stream"] = true
+            // Streaming usage is opt-in: without this, OpenAI-compatible gateways
+            // (e.g. DashScope) emit a usage chunk only for models that volunteer it,
+            // so cost/context goes missing for the rest. providerOptions below can
+            // still override it.
+            payload["stream_options"] = ["include_usage": true]
+        }
         if let options, !options.tools.isEmpty {
             payload["tools"] = options.tools.map { tool -> [String: Any] in
                 [

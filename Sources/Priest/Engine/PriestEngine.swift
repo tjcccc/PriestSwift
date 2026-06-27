@@ -11,7 +11,7 @@ public final class PriestEngine: Sendable {
 
     /// Spec version this implementation targets. A test should assert this matches
     /// the known spec version to catch sync drift between the spec and this SDK.
-    public static let specVersion = "2.4.0"
+    public static let specVersion = "2.6.1"
 
     private let profileLoader: any ProfileLoader
     private let sessionStore: (any SessionStore)?
@@ -50,6 +50,9 @@ public final class PriestEngine: Sendable {
         // Session handling
         let (session, isNewSession) = try await resolveSession(request: request)
 
+        // Compaction (spec 2.5.0): fold older turns before building messages.
+        if let session = session { try await maybeCompact(session, config: request.config) }
+
         // Build messages
         let messages = buildMessages(
             profile: profile,
@@ -60,7 +63,8 @@ public final class PriestEngine: Sendable {
             userContext: request.userContext,
             outputSpec: request.output,
             maxSystemChars: request.config.maxSystemChars,
-            toolExchange: request.toolExchange
+            toolExchange: request.toolExchange,
+            sessionContextTurns: request.config.sessionContextTurns
         )
 
         // Call provider
@@ -69,6 +73,7 @@ public final class PriestEngine: Sendable {
         var finishReason: String? = nil
         var inputTokens: Int? = nil
         var outputTokens: Int? = nil
+        var cachedInputTokens: Int? = nil
         var errorModel: PriestErrorModel? = nil
 
         do {
@@ -83,6 +88,7 @@ public final class PriestEngine: Sendable {
             finishReason = result.finishReason
             inputTokens = result.inputTokens
             outputTokens = result.outputTokens
+            cachedInputTokens = result.cachedInputTokens
             if toolCalls != nil { finishReason = "tool_calls" }
         } catch let e as PriestError {
             finishReason = "error"
@@ -99,6 +105,7 @@ public final class PriestEngine: Sendable {
             if toolCalls == nil {
                 session.appendTurn(role: .user, content: request.prompt)
                 if let t = text { session.appendTurn(role: .assistant, content: t) }
+                Self.recordChatUsage(session, request: request, inputTokens: inputTokens)
                 try await store.save(session)
             }
             sessionInfo = SessionInfo(id: session.id, isNew: isNewSession, turnCount: session.turns.count)
@@ -113,6 +120,7 @@ public final class PriestEngine: Sendable {
                 inputTokens: inputTokens,
                 outputTokens: outputTokens,
                 totalTokens: total > 0 ? total : nil,
+                cachedInputTokens: cachedInputTokens,
                 estimatedCostUSD: nil
             )
         }
@@ -153,6 +161,7 @@ public final class PriestEngine: Sendable {
                     }
                     let profile = try self.profileLoader.load(request.profile)
                     let (session, _) = try await self.resolveSession(request: request)
+                    if let session = session { try await self.maybeCompact(session, config: request.config) }
                     let messages = buildMessages(
                         profile: profile,
                         session: session,
@@ -162,7 +171,8 @@ public final class PriestEngine: Sendable {
                         userContext: request.userContext,
                         outputSpec: request.output,
                         maxSystemChars: request.config.maxSystemChars,
-                        toolExchange: request.toolExchange
+                        toolExchange: request.toolExchange,
+                        sessionContextTurns: request.config.sessionContextTurns
                     )
 
                     var parts: [String] = []
@@ -208,6 +218,7 @@ public final class PriestEngine: Sendable {
                     }
                     let profile = try self.profileLoader.load(request.profile)
                     let (session, isNewSession) = try await self.resolveSession(request: request)
+                    if let session = session { try await self.maybeCompact(session, config: request.config) }
                     let messages = buildMessages(
                         profile: profile,
                         session: session,
@@ -217,7 +228,8 @@ public final class PriestEngine: Sendable {
                         userContext: request.userContext,
                         outputSpec: request.output,
                         maxSystemChars: request.config.maxSystemChars,
-                        toolExchange: request.toolExchange
+                        toolExchange: request.toolExchange,
+                        sessionContextTurns: request.config.sessionContextTurns
                     )
 
                     var textParts: [String] = []
@@ -225,6 +237,7 @@ public final class PriestEngine: Sendable {
                     var finishReason: String? = nil
                     var inputTokens: Int? = nil
                     var outputTokens: Int? = nil
+                    var cachedInputTokens: Int? = nil
                     var errorModel: PriestErrorModel? = nil
 
                     do {
@@ -260,9 +273,11 @@ public final class PriestEngine: Sendable {
                             case "usage":
                                 inputTokens = event.inputTokens ?? inputTokens
                                 outputTokens = event.outputTokens ?? outputTokens
+                                cachedInputTokens = event.cachedInputTokens ?? cachedInputTokens
                                 var out = PriestStreamEvent(type: "usage")
                                 out.inputTokens = inputTokens
                                 out.outputTokens = outputTokens
+                                out.cachedInputTokens = cachedInputTokens
                                 continuation.yield(out)
                             case "finish":
                                 finishReason = event.finishReason ?? finishReason
@@ -286,6 +301,7 @@ public final class PriestEngine: Sendable {
                         if toolCalls.isEmpty, let fullText = text {
                             session.appendTurn(role: .user, content: request.prompt)
                             session.appendTurn(role: .assistant, content: fullText)
+                            Self.recordChatUsage(session, request: request, inputTokens: inputTokens)
                             try await store.save(session)
                         }
                         sessionInfo = SessionInfo(id: session.id, isNew: isNewSession, turnCount: session.turns.count)
@@ -298,6 +314,7 @@ public final class PriestEngine: Sendable {
                             inputTokens: inputTokens,
                             outputTokens: outputTokens,
                             totalTokens: total > 0 ? total : nil,
+                            cachedInputTokens: cachedInputTokens,
                             estimatedCostUSD: nil
                         )
                     }
@@ -330,6 +347,57 @@ public final class PriestEngine: Sendable {
 
     private static func callOptions(for request: PriestRequest) -> AdapterCallOptions? {
         request.tools.isEmpty ? nil : AdapterCallOptions(tools: request.tools, toolChoice: request.toolChoice)
+    }
+
+    // MARK: - Conversation compaction (spec 2.5.0)
+
+    /// Compact a session on demand: fold older turns into the running summary,
+    /// keeping the most recent `compactionKeepTurns`. Returns whether anything was
+    /// folded and the new coverage point. Throws `.sessionNotFound` for unknown ids.
+    public func compactSession(_ sessionId: String, config: PriestConfig) async throws -> (compacted: Bool, summarizedThrough: Int) {
+        guard let store = sessionStore else { return (false, 0) }
+        guard let session = try await store.get(sessionId) else {
+            throw PriestError.sessionNotFound(sessionId)
+        }
+        let compacted = try await compact(session, config: config)
+        return (compacted, session.getCompaction().summarizedThrough)
+    }
+
+    /// Record a turn's input size as the compaction trigger signal. Skipped when
+    /// the turn replays a tool exchange (its input is inflated by tool context).
+    private static func recordChatUsage(_ session: Session, request: PriestRequest, inputTokens: Int?) {
+        if !request.toolExchange.isEmpty { return }
+        session.recordInputTokens(inputTokens)
+    }
+
+    /// Compact before a turn when the previous turn's input usage crossed the budget.
+    private func maybeCompact(_ session: Session, config: PriestConfig) async throws {
+        guard sessionStore != nil else { return }
+        guard shouldCompact(lastInputTokens: session.getCompaction().lastInputTokens, maxContextTokens: config.maxContextTokens) else { return }
+        _ = try await compact(session, config: config)
+    }
+
+    /// Fold turns into the summary via a provider summarization call; persists the result.
+    @discardableResult
+    private func compact(_ session: Session, config: PriestConfig) async throws -> Bool {
+        guard let store = sessionStore else { return false }
+        let keepTurns = config.compactionKeepTurns ?? defaultCompactionKeepTurns
+        let existing = session.getCompaction()
+        guard let plan = planCompaction(turns: session.turns, alreadySummarizedThrough: existing.summarizedThrough, keepTurns: keepTurns) else {
+            return false
+        }
+        guard let adapter = adapters[config.provider] else {
+            throw PriestError.providerNotRegistered(config.provider)
+        }
+        let messages = buildSummaryMessages(existingSummary: existing.summary, toSummarize: plan.toSummarize)
+        var summaryConfig = config
+        if summaryConfig.maxOutputTokens == nil { summaryConfig.maxOutputTokens = summaryMaxOutputTokens }
+        let result = try await adapter.complete(messages: messages, config: summaryConfig, outputSpec: OutputSpec(), options: nil)
+        let summary = (result.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if summary.isEmpty { return false }
+        session.applyCompaction(summary: summary, summarizedThrough: plan.summarizedThrough)
+        try await store.save(session)
+        return true
     }
 
     // MARK: - Session resolution

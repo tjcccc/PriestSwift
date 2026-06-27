@@ -56,6 +56,7 @@ public struct AdapterStreamEvent: Sendable {
     public var toolCall: ToolCall?
     public var inputTokens: Int?
     public var outputTokens: Int?
+    public var cachedInputTokens: Int?
     public var finishReason: String?
 
     public init(type: String) {
@@ -89,6 +90,16 @@ public protocol ProviderAdapter: Sendable {
         outputSpec: OutputSpec,
         options: AdapterCallOptions?
     ) -> AsyncThrowingStream<String, Error>
+
+    /// Structured streaming (spec 2.4.0). A protocol requirement (with a default
+    /// in the extension below) so adapters that surface native tool-call deltas
+    /// and usage events are dynamically dispatched through `any ProviderAdapter`.
+    func streamEvents(
+        messages: [ChatMessage],
+        config: PriestConfig,
+        outputSpec: OutputSpec,
+        options: AdapterCallOptions?
+    ) -> AsyncThrowingStream<AdapterStreamEvent, Error>
 }
 
 // MARK: - Default implementations

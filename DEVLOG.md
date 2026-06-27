@@ -1,5 +1,18 @@
 # DEVLOG
 
+## 2026-06-27 — v2.6.1 — full spec sync (compaction, turn window, cached tokens, streaming usage)
+
+Brings PriestSwift to full parity with the spec at v2.6.1 (2.5.0 → 2.6.0 → 2.6.1), mirroring the priest-core/priest-typescript reference. All additions are off/opt-in by default; the SQLite schema is unchanged, so pre-2.5 sessions remain interoperable.
+
+- **Cached input tokens (spec 2.5.0):** `AdapterResult.cachedInputTokens` / `UsageInfo.cachedInputTokens` and the `usage` stream event. Parsed from OpenAI-compat `usage.prompt_tokens_details.cached_tokens` and Anthropic `usage.cache_read_input_tokens`. Nil when omitted.
+- **Conversation compaction (spec 2.5.0):** new `Engine/Compactor.swift` (`shouldCompact`, `planCompaction`, `buildSummaryMessages`; ratio 0.8, default keep 6, summary cap 1024). `PriestConfig.maxContextTokens` enables it; a chat turn crossing 80% of the budget folds older turns into a running summary and replays only `summary + recent tail`. State persists in session `metadata["__compaction"]` with **camelCase keys** (cross-SDK contract, `SessionModel.swift`). `engine.compactSession()` for a manual `/compact`; trigger measured on clean chat turns only (tool-exchange replays skipped).
+- **Session turn window (spec 2.6.0):** `PriestConfig.sessionContextTurns` caps replayed turns; the context builder windows from `max(summarizedThrough, count-N)` and snaps an odd window down to a user turn.
+- **OpenAI-compat streaming usage (spec 2.6.1):** streaming requests send `stream_options: {include_usage: true}` (overridable via `providerOptions`).
+- **`streamEvents` promoted to a `ProviderAdapter` protocol requirement** (default impl unchanged in the extension) so adapters that surface native usage/tool-call events are dynamically dispatched — previously the extension default always shadowed overrides, so streaming never surfaced usage events.
+- **Partial-parity caveat — streaming path:** compaction and cached-token reporting are **fully functional on `run()` / `complete()`**. On `stream()` / `streamEvents()` they are **inert in production**, because the shipping `OpenAICompatProvider` / `AnthropicProvider` do not override `streamEvents` (they wrap text-only `stream()`, a pre-existing collected-text streaming limitation) and so emit no `usage` event — without it the compaction trigger never records and `cachedInputTokens` is never seen. The engine wiring is correct and dispatches to any adapter that *does* emit native usage events (verified by `test_compactsOverStreamingPath` with a usage-emitting mock); surfacing native streaming usage in the real providers is a separate, larger change.
+- `PriestEngine.specVersion` → "2.6.1"; README spec references bumped to v2.6.1.
+- Tests: `Tests/PriestTests/CompactionTests.swift` (18 — incl. a SQLite round-trip asserting the persisted `__compaction` camelCase bytes) plus the existing wire tests. `swift test` green (75 total).
+
 ## 2026-06-12 — v2.4.0 — tool calling, structured streaming (spec 2.4.0 sync)
 
 Syncs the spec 2.4.0 features (reference: priest-typescript / Python priest-core 2.4.0).

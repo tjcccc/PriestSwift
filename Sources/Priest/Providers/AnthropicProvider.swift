@@ -40,6 +40,7 @@ public final class AnthropicProvider: ProviderAdapter {
             finishReason: toolCalls != nil ? "tool_calls" : mapFinishReason(json["stop_reason"] as? String),
             inputTokens: usage?["input_tokens"] as? Int,
             outputTokens: usage?["output_tokens"] as? Int,
+            cachedInputTokens: usage?["cache_read_input_tokens"] as? Int,
             toolCalls: toolCalls
         )
     }

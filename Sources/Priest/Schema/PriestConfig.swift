@@ -14,6 +14,15 @@ public struct PriestConfig: Sendable {
     public var costLimit: Double?
     /// Budget for the assembled system prompt in characters. Triggers tail-trim of memory entries when exceeded.
     public var maxSystemChars: Int?
+    /// Conversation compaction budget (spec 2.5.0). When set, a chat turn whose
+    /// reported input usage crosses 80% of this budget triggers compaction.
+    /// Nil = compaction off (default). Independent of `maxSystemChars`.
+    public var maxContextTokens: Int?
+    /// Most-recent turns kept verbatim when compacting (spec 2.5.0). Default 6.
+    public var compactionKeepTurns: Int?
+    /// Hard cap on how many recent session turns are replayed (spec 2.6.0).
+    /// 0 replays none (summary only); nil replays all (default).
+    public var sessionContextTurns: Int?
     /// Provider-specific options merged directly into the request payload.
     /// Examples: `["think": false]` for Ollama/Qwen3, `["temperature": 0.7]`.
     public var providerOptions: [String: JSONValue]
@@ -25,6 +34,9 @@ public struct PriestConfig: Sendable {
         maxOutputTokens: Int? = nil,
         costLimit: Double? = nil,
         maxSystemChars: Int? = nil,
+        maxContextTokens: Int? = nil,
+        compactionKeepTurns: Int? = nil,
+        sessionContextTurns: Int? = nil,
         providerOptions: [String: JSONValue] = [:]
     ) {
         self.provider = provider
@@ -33,6 +45,9 @@ public struct PriestConfig: Sendable {
         self.maxOutputTokens = maxOutputTokens
         self.costLimit = costLimit
         self.maxSystemChars = maxSystemChars
+        self.maxContextTokens = maxContextTokens
+        self.compactionKeepTurns = compactionKeepTurns
+        self.sessionContextTurns = sessionContextTurns
         self.providerOptions = providerOptions
     }
 }

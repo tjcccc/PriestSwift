@@ -15,6 +15,7 @@ private let formatInstructions: [PromptFormat: String] = [
 
 private let memoriesHeader       = "## Loaded Memories\n\n"
 private let dynamicMemoryHeader  = "## Memory\n\n"
+private let summaryHeader         = "## Conversation so far (summary)\n\n"
 private let sectionSeparator     = "\n\n"
 private let memorySeparator      = "\n"
 
@@ -29,8 +30,15 @@ func buildMessages(
     userContext: [String],
     outputSpec: OutputSpec,
     maxSystemChars: Int? = nil,
-    toolExchange: [ToolExchangeTurn] = []
+    toolExchange: [ToolExchangeTurn] = [],
+    sessionContextTurns: Int? = nil
 ) -> [ChatMessage] {
+
+    // Compaction summary (spec 2.5.0): stands in for the folded-away leading
+    // turns, which are skipped in the history window below.
+    let compaction = session?.getCompaction()
+    let conversationSummary = compaction?.summary
+    let summarizedThrough = compaction?.summarizedThrough ?? 0
 
     // Step 1 — normalize profile memories
     var profileMemories = profile.memories
@@ -52,15 +60,15 @@ func buildMessages(
         let fmtStr = outputSpec.promptFormat.flatMap { formatInstructions[$0] }
         while !dynamicMemory.isEmpty &&
               assembleSystemContent(context: context, profile: profile, profileMemories: profileMemories,
-                                    dynamicMemory: dynamicMemory, formatInstruction: fmtStr).count > budget {
+                                    dynamicMemory: dynamicMemory, formatInstruction: fmtStr, conversationSummary: conversationSummary).count > budget {
             dynamicMemory.removeLast()
         }
         while !profileMemories.isEmpty &&
               assembleSystemContent(context: context, profile: profile, profileMemories: profileMemories,
-                                    dynamicMemory: dynamicMemory, formatInstruction: fmtStr).count > budget {
+                                    dynamicMemory: dynamicMemory, formatInstruction: fmtStr, conversationSummary: conversationSummary).count > budget {
             profileMemories.removeLast()
         }
-        // If still exceeded: continue — context/rules/identity/custom/format are never trimmed
+        // If still exceeded: continue — context/rules/identity/custom/summary/format are never trimmed
     }
 
     // Step 4 — assemble system content
@@ -68,7 +76,7 @@ func buildMessages(
     let systemContent = assembleSystemContent(
         context: context, profile: profile,
         profileMemories: profileMemories, dynamicMemory: dynamicMemory,
-        formatInstruction: formatInstruction
+        formatInstruction: formatInstruction, conversationSummary: conversationSummary
     )
 
     // Step 5 — build message list
@@ -79,7 +87,20 @@ func buildMessages(
     }
 
     if let session = session {
-        for turn in session.turns {
+        // Replay window (spec 2.5.0 + 2.6.0). Skip turns folded into the summary;
+        // optionally cap to the last N turns.
+        var windowStart = summarizedThrough
+        if let n = sessionContextTurns {
+            windowStart = max(summarizedThrough, session.turns.count - max(0, n))
+            // Snap down to a user turn so an odd-sized window never opens the replay
+            // on an orphan assistant reply. Floored by summarizedThrough.
+            while windowStart > summarizedThrough
+                  && windowStart < session.turns.count
+                  && session.turns[windowStart].role != .user {
+                windowStart -= 1
+            }
+        }
+        for turn in session.turns[windowStart...] {
             messages.append(ChatMessage(role: turn.role.rawValue, content: turn.content))
         }
     }
@@ -111,7 +132,8 @@ private func assembleSystemContent(
     profile: Profile,
     profileMemories: [String],
     dynamicMemory: [String],
-    formatInstruction: String?
+    formatInstruction: String?,
+    conversationSummary: String? = nil
 ) -> String {
     var parts: [String] = []
 
@@ -127,6 +149,10 @@ private func assembleSystemContent(
     }
     if !dynamicMemory.isEmpty {
         parts.append(dynamicMemoryHeader + dynamicMemory.joined(separator: memorySeparator))
+    }
+    // Compaction summary (spec 2.5.0): after memory, before the format instruction.
+    if let summary = conversationSummary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
+        parts.append(summaryHeader + summary)
     }
     if let instr = formatInstruction {
         parts.append(instr)
