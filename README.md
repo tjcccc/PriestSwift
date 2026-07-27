@@ -8,7 +8,7 @@ iOS 15+ · macOS 12+ · Swift 5.9+ · Zero external dependencies
 
 ## Overview
 
-PriestSwift is a Swift Package that implements the priest protocol spec v2.6.1 natively — no Python server, no FFI, no network dependency beyond the AI provider itself. It is designed for offline and on-device use cases: iOS apps, macOS tools, Unity (via .NET interop), and any Swift host.
+PriestSwift is a Swift Package that implements the priest protocol spec v2.8.0 natively — no Python server, no FFI, no network dependency beyond the AI provider itself. It is designed for offline and on-device use cases: iOS apps, macOS tools, Unity (via .NET interop), and any Swift host.
 
 The core API is two methods on `PriestEngine`:
 
@@ -75,7 +75,7 @@ for try await chunk in engine.stream(request) {
 }
 ```
 
-### Using Anthropic or OpenAI-compatible providers
+### Using Anthropic or OpenAI providers
 
 ```swift
 let engine = PriestEngine(
@@ -83,6 +83,7 @@ let engine = PriestEngine(
     adapters: [
         "anthropic": AnthropicProvider(apiKey: "sk-ant-..."),
         "openai":    OpenAICompatProvider(baseURL: URL(string: "https://api.openai.com")!, apiKey: "sk-..."),
+        "responses": OpenAIResponsesProvider(apiKey: "sk-..."),
     ]
 )
 
@@ -229,6 +230,28 @@ let request = PriestRequest(
 
 ---
 
+## Reasoning
+
+Use `PriestConfig.reasoning` to request provider-neutral reasoning behavior:
+
+```swift
+let config = PriestConfig(
+    provider: "responses",
+    model: "gpt-5",
+    reasoning: ReasoningConfig(
+        enabled: true,
+        effort: .high,
+        summary: .auto
+    )
+)
+```
+
+`OpenAIResponsesProvider`, `AnthropicProvider`, and `OllamaProvider` translate the neutral options into provider-specific request fields. Support still depends on the selected provider and model. Safe provider summaries are returned in `PriestResponse.reasoning`; `UsageInfo.reasoningTokens` reports provider-supplied reasoning-token usage, and structured streams can emit `reasoning_summary_delta`.
+
+PriestSwift never exposes raw chain-of-thought. Opaque signed or encrypted continuation state is replayed only within a tool-call exchange and is not stored in session turns or SQLite.
+
+---
+
 ## Error Handling
 
 Two errors are always thrown as Swift exceptions and never captured into `response.error`:
@@ -259,8 +282,9 @@ do {
 | Key | Type | Notes |
 |-----|------|-------|
 | `"ollama"` | `OllamaProvider` | NDJSON streaming; local by default |
-| `"anthropic"` | `AnthropicProvider` | SSE streaming; requires API key |
+| `"anthropic"` | `AnthropicProvider` | SSE streaming, including reasoning/tool/usage events; requires API key |
 | `"openai"` | `OpenAICompatProvider` | SSE streaming; works with any OpenAI-compatible endpoint |
+| `"responses"` | `OpenAIResponsesProvider` | OpenAI Responses API with semantic SSE, reasoning, tools, and structured output |
 
 Provider keys are arbitrary strings — the key you register in `adapters:` must match the `provider` field in `PriestConfig`.
 
@@ -268,10 +292,10 @@ Provider keys are arbitrary strings — the key you register in `adapters:` must
 
 ## Spec
 
-PriestSwift targets priest protocol spec **v2.6.1**. The spec lives in the [`priest`](https://github.com/tjcccc/priest) repository under `spec/`. It defines the canonical context assembly algorithm, session schema, timestamp format, and error codes that all priest SDKs must implement identically.
+PriestSwift targets priest protocol spec **v2.8.0**. The spec lives in the [`priest`](https://github.com/tjcccc/priest) repository under `spec/`. It defines the canonical context assembly algorithm, session schema, timestamp format, and error codes that all priest SDKs must implement identically.
 
 ```swift
-PriestEngine.specVersion  // "2.6.1"
+PriestEngine.specVersion  // "2.8.0"
 ```
 
 ---

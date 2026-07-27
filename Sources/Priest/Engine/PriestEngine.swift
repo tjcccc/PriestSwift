@@ -6,12 +6,12 @@ import Foundation
 /// Profile caching, if needed, should be implemented in the host app's
 /// ProfileLoader wrapper.
 ///
-/// Spec version this implementation targets: 1.0.0
+/// Spec version this implementation targets: 2.8.0
 public final class PriestEngine: Sendable {
 
     /// Spec version this implementation targets. A test should assert this matches
     /// the known spec version to catch sync drift between the spec and this SDK.
-    public static let specVersion = "2.6.1"
+    public static let specVersion = "2.8.0"
 
     private let profileLoader: any ProfileLoader
     private let sessionStore: (any SessionStore)?
@@ -70,10 +70,12 @@ public final class PriestEngine: Sendable {
         // Call provider
         var text: String? = nil
         var toolCalls: [ToolCall]? = nil
+        var reasoning: ReasoningInfo? = nil
         var finishReason: String? = nil
         var inputTokens: Int? = nil
         var outputTokens: Int? = nil
         var cachedInputTokens: Int? = nil
+        var reasoningTokens: Int? = nil
         var errorModel: PriestErrorModel? = nil
 
         do {
@@ -89,6 +91,8 @@ public final class PriestEngine: Sendable {
             inputTokens = result.inputTokens
             outputTokens = result.outputTokens
             cachedInputTokens = result.cachedInputTokens
+            reasoningTokens = result.reasoningTokens
+            reasoning = result.reasoning
             if toolCalls != nil { finishReason = "tool_calls" }
         } catch let e as PriestError {
             finishReason = "error"
@@ -114,13 +118,14 @@ public final class PriestEngine: Sendable {
         let latencyMs = Int(Date().timeIntervalSince1970 * 1000) - startMs
 
         var usage: UsageInfo? = nil
-        if inputTokens != nil || outputTokens != nil {
+        if inputTokens != nil || outputTokens != nil || cachedInputTokens != nil || reasoningTokens != nil {
             let total = (inputTokens ?? 0) + (outputTokens ?? 0)
             usage = UsageInfo(
                 inputTokens: inputTokens,
                 outputTokens: outputTokens,
-                totalTokens: total > 0 ? total : nil,
+                totalTokens: (inputTokens != nil || outputTokens != nil) ? total : nil,
                 cachedInputTokens: cachedInputTokens,
+                reasoningTokens: reasoningTokens,
                 estimatedCostUSD: nil
             )
         }
@@ -128,6 +133,7 @@ public final class PriestEngine: Sendable {
         return PriestResponse(
             text: text,
             toolCalls: toolCalls,
+            reasoning: reasoning,
             execution: ExecutionInfo(
                 provider: request.config.provider,
                 model: request.config.model,
@@ -238,6 +244,8 @@ public final class PriestEngine: Sendable {
                     var inputTokens: Int? = nil
                     var outputTokens: Int? = nil
                     var cachedInputTokens: Int? = nil
+                    var reasoningTokens: Int? = nil
+                    var reasoning: ReasoningInfo? = nil
                     var errorModel: PriestErrorModel? = nil
 
                     do {
@@ -252,6 +260,12 @@ public final class PriestEngine: Sendable {
                                 if let text = event.text, !text.isEmpty {
                                     textParts.append(text)
                                     var out = PriestStreamEvent(type: "text_delta")
+                                    out.text = text
+                                    continuation.yield(out)
+                                }
+                            case "reasoning_summary_delta":
+                                if let text = event.text, !text.isEmpty {
+                                    var out = PriestStreamEvent(type: "reasoning_summary_delta")
                                     out.text = text
                                     continuation.yield(out)
                                 }
@@ -274,13 +288,16 @@ public final class PriestEngine: Sendable {
                                 inputTokens = event.inputTokens ?? inputTokens
                                 outputTokens = event.outputTokens ?? outputTokens
                                 cachedInputTokens = event.cachedInputTokens ?? cachedInputTokens
+                                reasoningTokens = event.reasoningTokens ?? reasoningTokens
                                 var out = PriestStreamEvent(type: "usage")
                                 out.inputTokens = inputTokens
                                 out.outputTokens = outputTokens
                                 out.cachedInputTokens = cachedInputTokens
+                                out.reasoningTokens = reasoningTokens
                                 continuation.yield(out)
                             case "finish":
                                 finishReason = event.finishReason ?? finishReason
+                                reasoning = event.reasoning ?? reasoning
                             default:
                                 break
                             }
@@ -308,13 +325,14 @@ public final class PriestEngine: Sendable {
                     }
 
                     var usage: UsageInfo? = nil
-                    if inputTokens != nil || outputTokens != nil {
+                    if inputTokens != nil || outputTokens != nil || cachedInputTokens != nil || reasoningTokens != nil {
                         let total = (inputTokens ?? 0) + (outputTokens ?? 0)
                         usage = UsageInfo(
                             inputTokens: inputTokens,
                             outputTokens: outputTokens,
-                            totalTokens: total > 0 ? total : nil,
+                            totalTokens: (inputTokens != nil || outputTokens != nil) ? total : nil,
                             cachedInputTokens: cachedInputTokens,
+                            reasoningTokens: reasoningTokens,
                             estimatedCostUSD: nil
                         )
                     }
@@ -322,6 +340,7 @@ public final class PriestEngine: Sendable {
                     let response = PriestResponse(
                         text: text,
                         toolCalls: toolCalls.isEmpty ? nil : toolCalls,
+                        reasoning: reasoning,
                         execution: ExecutionInfo(
                             provider: request.config.provider,
                             model: request.config.model,

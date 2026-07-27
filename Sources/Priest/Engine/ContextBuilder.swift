@@ -115,8 +115,13 @@ func buildMessages(
     // user message, never persisted in sessions.
     for turn in toolExchange {
         switch turn {
-        case let .assistant(text, toolCalls):
-            messages.append(ChatMessage(role: "assistant", content: text ?? "", toolCalls: toolCalls))
+        case let .assistant(text, toolCalls, reasoning):
+            messages.append(ChatMessage(
+                role: "assistant",
+                content: text ?? "",
+                toolCalls: toolCalls,
+                reasoning: reasoning
+            ))
         case let .toolResult(toolCallId, name, content, _):
             messages.append(ChatMessage(role: "tool", content: content, toolCallId: toolCallId, name: name))
         }

@@ -20,6 +20,7 @@ public final class OllamaProvider: ProviderAdapter {
         outputSpec: OutputSpec,
         options: AdapterCallOptions? = nil
     ) async throws -> AdapterResult {
+        try validateReasoning(config)
         let payload = buildPayload(messages: messages, config: config, outputSpec: outputSpec, options: options, stream: false)
         let data = try await post(path: "/api/chat", payload: payload, timeout: config.timeoutSeconds)
         let json = try parseJSON(data)
@@ -48,6 +49,7 @@ public final class OllamaProvider: ProviderAdapter {
         return AsyncThrowingStream { continuation in
             Task {
                 do {
+                    try self.validateReasoning(config)
                     let request = try self.buildRequest(path: "/api/chat", payload: payload, timeout: config.timeoutSeconds)
                     let (bytes, response) = try await URLSession.shared.bytes(for: request)
                     guard let httpResponse = response as? HTTPURLResponse else {
@@ -75,7 +77,7 @@ public final class OllamaProvider: ProviderAdapter {
 
     // MARK: - Helpers
 
-    private func buildPayload(messages: [ChatMessage], config: PriestConfig, outputSpec: OutputSpec, options: AdapterCallOptions?, stream: Bool) -> [String: Any] {
+    func buildPayload(messages: [ChatMessage], config: PriestConfig, outputSpec: OutputSpec, options: AdapterCallOptions?, stream: Bool) -> [String: Any] {
         var payload: [String: Any] = [
             "model": config.model,
             "messages": Self.buildWireMessages(messages),
@@ -97,6 +99,17 @@ public final class OllamaProvider: ProviderAdapter {
         if let n = config.maxOutputTokens {
             payload["options"] = ["num_predict": n]
         }
+        if let reasoning = config.reasoning {
+            if reasoning.enabled == false || reasoning.effort == ReasoningEffort.none {
+                payload["think"] = false
+            } else if let effort = reasoning.effort,
+                      effort != .minimal,
+                      effort != .xhigh {
+                payload["think"] = effort.rawValue
+            } else if reasoning.enabled == true, reasoning.effort == nil {
+                payload["think"] = true
+            }
+        }
         if let schema = outputSpec.jsonSchema {
             payload["format"] = JSONValue.object(schema).toFoundation()
         } else if outputSpec.providerFormat == .json {
@@ -106,6 +119,16 @@ public final class OllamaProvider: ProviderAdapter {
             payload[k] = v.toFoundation()
         }
         return payload
+    }
+
+    private func validateReasoning(_ config: PriestConfig) throws {
+        guard let effort = config.reasoning?.effort,
+              effort == .minimal || effort == .xhigh else { return }
+        throw PriestError(
+            code: .requestInvalid,
+            message: "Ollama does not define the reasoning effort '\(effort.rawValue)'",
+            details: ["provider": providerName, "effort": effort.rawValue]
+        )
     }
 
     private func buildRequest(path: String, payload: [String: Any], timeout: Double) throws -> URLRequest {

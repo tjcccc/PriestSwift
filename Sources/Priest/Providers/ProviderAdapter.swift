@@ -7,19 +7,22 @@ public struct ChatMessage: Sendable {
     public var toolCalls: [ToolCall]?
     public var toolCallId: String?
     public var name: String?
+    public var reasoning: ReasoningInfo?
 
     public init(
         role: String,
         content: String,
         toolCalls: [ToolCall]? = nil,
         toolCallId: String? = nil,
-        name: String? = nil
+        name: String? = nil,
+        reasoning: ReasoningInfo? = nil
     ) {
         self.role = role
         self.content = content
         self.toolCalls = toolCalls
         self.toolCallId = toolCallId
         self.name = name
+        self.reasoning = reasoning
     }
 
     /// Back-compat with the previous `[[String: String]]` message shape.
@@ -57,7 +60,9 @@ public struct AdapterStreamEvent: Sendable {
     public var inputTokens: Int?
     public var outputTokens: Int?
     public var cachedInputTokens: Int?
+    public var reasoningTokens: Int?
     public var finishReason: String?
+    public var reasoning: ReasoningInfo?
 
     public init(type: String) {
         self.type = type

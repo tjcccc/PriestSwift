@@ -2,6 +2,7 @@
 public enum FinishedReason: String, Sendable {
     case stop
     case length
+    case contentFilter = "content_filter"
     case toolCalls = "tool_calls"
     case error
     case unknown
@@ -25,6 +26,8 @@ public struct UsageInfo: Sendable {
     public let totalTokens: Int?
     /// Prompt-cache hit count (spec 2.5.0). Nil when the provider omits it.
     public let cachedInputTokens: Int?
+    /// Provider-reported reasoning tokens. A subset of outputTokens.
+    public let reasoningTokens: Int?
     public let estimatedCostUSD: Double?
 }
 
@@ -56,6 +59,8 @@ public struct PriestResponse: Sendable {
     /// execution.finishedReason is .toolCalls. The caller executes them and
     /// re-runs with the results appended to PriestRequest.toolExchange.
     public let toolCalls: [ToolCall]?
+    /// Provider-supplied summary and request-local opaque continuation state.
+    public let reasoning: ReasoningInfo?
     public let execution: ExecutionInfo
     /// Token usage. Nil if the provider did not report usage data.
     public let usage: UsageInfo?

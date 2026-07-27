@@ -10,6 +10,15 @@ func jsonValueObject(fromFoundation value: Any?) -> [String: JSONValue] {
     return map
 }
 
+func jsonValue(fromFoundation value: Any?) -> JSONValue? {
+    guard let value,
+          JSONSerialization.isValidJSONObject(["value": value]),
+          let data = try? JSONSerialization.data(withJSONObject: ["value": value]),
+          let decoded = try? JSONDecoder().decode([String: JSONValue].self, from: data)
+    else { return nil }
+    return decoded["value"]
+}
+
 func foundationObject(from arguments: [String: JSONValue]) -> [String: Any] {
     var out: [String: Any] = [:]
     for (key, value) in arguments {

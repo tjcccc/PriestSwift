@@ -23,6 +23,8 @@ public struct PriestConfig: Sendable {
     /// Hard cap on how many recent session turns are replayed (spec 2.6.0).
     /// 0 replays none (summary only); nil replays all (default).
     public var sessionContextTurns: Int?
+    /// Provider-neutral reasoning request. Nil preserves provider/model defaults.
+    public var reasoning: ReasoningConfig?
     /// Provider-specific options merged directly into the request payload.
     /// Examples: `["think": false]` for Ollama/Qwen3, `["temperature": 0.7]`.
     public var providerOptions: [String: JSONValue]
@@ -37,6 +39,7 @@ public struct PriestConfig: Sendable {
         maxContextTokens: Int? = nil,
         compactionKeepTurns: Int? = nil,
         sessionContextTurns: Int? = nil,
+        reasoning: ReasoningConfig? = nil,
         providerOptions: [String: JSONValue] = [:]
     ) {
         self.provider = provider
@@ -48,6 +51,7 @@ public struct PriestConfig: Sendable {
         self.maxContextTokens = maxContextTokens
         self.compactionKeepTurns = compactionKeepTurns
         self.sessionContextTurns = sessionContextTurns
+        self.reasoning = reasoning
         self.providerOptions = providerOptions
     }
 }

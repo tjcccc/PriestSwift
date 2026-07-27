@@ -1,5 +1,17 @@
 # DEVLOG
 
+## 2026-07-27 — v2.8.0 — OpenAI Responses and provider-neutral reasoning
+
+Syncs PriestSwift with protocol v2.8.0 and the TypeScript reference implementation.
+
+- Added `OpenAIResponsesProvider` as a first-class `/v1/responses` adapter with complete and semantic SSE paths, structured output, function tools, deterministic finish/error mapping, usage details, and request-owned `model` / `input` / `stream` invariants.
+- Added provider-neutral `ReasoningConfig`, safe `ReasoningInfo`, opaque continuation state, `reasoning_summary_delta`, `reasoningTokens`, and `contentFilter`.
+- Mapped neutral reasoning controls to OpenAI Responses, Anthropic Messages, and Ollama. Anthropic now emits native structured reasoning/tool/usage stream events; Ollama rejects the unsupported `minimal` and `xhigh` effort values before transport.
+- Preserved safe reasoning boundaries: raw chain-of-thought is never exposed, opaque signed/encrypted state is replayed only during tool exchanges, and reasoning state is not persisted in sessions.
+- Preserved the SQLite schema, timestamp representation, and Python/TypeScript/.NET/Rust interoperability contract; no migration was introduced.
+- Added focused v2.8 wire, parser, CRLF SSE, deduplication, safe-continuation, engine-stream, and tool-loop regression tests.
+- `PriestEngine.specVersion` is now `"2.8.0"`. `swift test` passes 84 tests and `swift build -c release` passes.
+
 ## 2026-06-27 — v2.6.1 — full spec sync (compaction, turn window, cached tokens, streaming usage)
 
 Brings PriestSwift to full parity with the spec at v2.6.1 (2.5.0 → 2.6.0 → 2.6.1), mirroring the priest-core/priest-typescript reference. All additions are off/opt-in by default; the SQLite schema is unchanged, so pre-2.5 sessions remain interoperable.

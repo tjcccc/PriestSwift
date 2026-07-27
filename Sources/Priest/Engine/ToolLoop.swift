@@ -56,7 +56,7 @@ public func runWithTools(
             return ToolLoopResult(response: current, exchange: exchange, iterationLimitReached: false)
         }
 
-        exchange.append(.assistant(text: current.text, toolCalls: calls))
+        exchange.append(.assistant(text: current.text, toolCalls: calls, reasoning: current.reasoning))
         for call in calls {
             let decision = await onToolCall?(call) ?? ApprovalDecision(approved: true)
             if !decision.approved {

@@ -47,7 +47,7 @@ public struct ToolCall: Sendable, Equatable {
 /// exchange on each loop iteration via `PriestRequest.toolExchange`.
 /// Exchange turns are never persisted in sessions.
 public enum ToolExchangeTurn: Sendable, Equatable {
-    case assistant(text: String?, toolCalls: [ToolCall])
+    case assistant(text: String?, toolCalls: [ToolCall], reasoning: ReasoningInfo? = nil)
     case toolResult(toolCallId: String, name: String, content: String, isError: Bool = false)
 }
 

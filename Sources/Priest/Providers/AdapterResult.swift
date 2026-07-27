@@ -6,8 +6,12 @@ public struct AdapterResult: Sendable {
     public let outputTokens: Int?
     /// Prompt-cache hit count (spec 2.5.0). Nil when the provider omits it.
     public let cachedInputTokens: Int?
+    /// Provider-reported reasoning tokens. A subset of output tokens.
+    public let reasoningTokens: Int?
     /// Tool calls requested by the model (spec 2.4.0). Nil when there are none.
     public let toolCalls: [ToolCall]?
+    /// Safe provider-supplied reasoning information.
+    public let reasoning: ReasoningInfo?
 
     public init(
         text: String?,
@@ -15,7 +19,9 @@ public struct AdapterResult: Sendable {
         inputTokens: Int? = nil,
         outputTokens: Int? = nil,
         cachedInputTokens: Int? = nil,
-        toolCalls: [ToolCall]? = nil
+        toolCalls: [ToolCall]? = nil,
+        reasoningTokens: Int? = nil,
+        reasoning: ReasoningInfo? = nil
     ) {
         self.text = text
         self.finishReason = finishReason
@@ -23,5 +29,7 @@ public struct AdapterResult: Sendable {
         self.outputTokens = outputTokens
         self.cachedInputTokens = cachedInputTokens
         self.toolCalls = toolCalls
+        self.reasoningTokens = reasoningTokens
+        self.reasoning = reasoning
     }
 }
