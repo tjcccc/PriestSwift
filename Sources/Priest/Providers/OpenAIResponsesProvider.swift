@@ -342,9 +342,10 @@ public final class OpenAIResponsesProvider: ProviderAdapter, @unchecked Sendable
                 }
                 continue
             }
+            let textType = message.role == "assistant" ? "output_text" : "input_text"
             input.append([
                 "role": message.role,
-                "content": [["type": "input_text", "text": message.content]],
+                "content": [["type": textType, "text": message.content]],
             ])
         }
         return input

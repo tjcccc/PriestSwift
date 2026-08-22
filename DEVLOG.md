@@ -1,5 +1,15 @@
 # DEVLOG
 
+## 2026-08-22 — v2.8.1 — OpenAI Responses assistant-history replay
+
+- Corrected Responses request serialization so prior assistant text uses
+  `output_text`; system and user messages continue to use `input_text`.
+- Added a regression covering system/user/assistant/user replay and advanced
+  the declared protocol version to `2.8.1`.
+- Session persistence and the OpenAI-compatible adapter are unchanged.
+- Verification: `swift test` passes 85 tests and `swift build -c release`
+  succeeds.
+
 ## 2026-07-27 — v2.8.0 — OpenAI Responses and provider-neutral reasoning
 
 Syncs PriestSwift with protocol v2.8.0 and the TypeScript reference implementation.

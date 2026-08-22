@@ -6,12 +6,12 @@ import Foundation
 /// Profile caching, if needed, should be implemented in the host app's
 /// ProfileLoader wrapper.
 ///
-/// Spec version this implementation targets: 2.8.0
+/// Spec version this implementation targets: 2.8.1
 public final class PriestEngine: Sendable {
 
     /// Spec version this implementation targets. A test should assert this matches
     /// the known spec version to catch sync drift between the spec and this SDK.
-    public static let specVersion = "2.8.0"
+    public static let specVersion = "2.8.1"
 
     private let profileLoader: any ProfileLoader
     private let sessionStore: (any SessionStore)?

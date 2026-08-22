@@ -97,6 +97,27 @@ final class Protocol28Tests: XCTestCase {
         XCTAssertEqual(input?[2]["type"] as? String, "function_call_output")
     }
 
+    func testResponsesHistoryUsesOutputTextForAssistantTurns() {
+        let body = provider.buildPayload(
+            messages: [
+                ChatMessage(role: "system", content: "Be concise."),
+                ChatMessage(role: "user", content: "First question."),
+                ChatMessage(role: "assistant", content: "First answer."),
+                ChatMessage(role: "user", content: "Second question."),
+            ],
+            config: PriestConfig(provider: "responses", model: "gpt-test"),
+            outputSpec: OutputSpec(),
+            options: nil,
+            stream: false
+        )
+
+        let input = body["input"] as? [[String: Any]]
+        let types = input?.compactMap { message in
+            (message["content"] as? [[String: Any]])?.first?["type"] as? String
+        }
+        XCTAssertEqual(types, ["input_text", "input_text", "output_text", "input_text"])
+    }
+
     func testResponsesParserSurfacesSafeReasoningUsageAndContentFilter() throws {
         let result = try OpenAIResponsesProvider.parseResponse([
             "status": "completed",
