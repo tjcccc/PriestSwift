@@ -38,10 +38,16 @@ public struct ChatMessage: Sendable {
 /// Per-call options threaded from the engine into adapters (spec 2.4.0).
 public struct AdapterCallOptions: Sendable {
     public let tools: [ToolDefinition]
+    public let providerTools: [ProviderToolDefinition]
     public let toolChoice: ToolChoice?
 
-    public init(tools: [ToolDefinition], toolChoice: ToolChoice? = nil) {
+    public init(
+        tools: [ToolDefinition] = [],
+        providerTools: [ProviderToolDefinition] = [],
+        toolChoice: ToolChoice? = nil
+    ) {
         self.tools = tools
+        self.providerTools = providerTools
         self.toolChoice = toolChoice
     }
 }
@@ -82,6 +88,10 @@ public struct AdapterStreamEvent: Sendable {
 public protocol ProviderAdapter: Sendable {
     var providerName: String { get }
 
+    /// Whether this adapter can execute the provider-owned tool for the
+    /// selected model/configuration. The default supports none.
+    func supportsProviderTool(_ tool: ProviderToolDefinition, config: PriestConfig) -> Bool
+
     func complete(
         messages: [ChatMessage],
         config: PriestConfig,
@@ -110,6 +120,10 @@ public protocol ProviderAdapter: Sendable {
 // MARK: - Default implementations
 
 public extension ProviderAdapter {
+    func supportsProviderTool(_ tool: ProviderToolDefinition, config: PriestConfig) -> Bool {
+        false
+    }
+
     /// Default stream: calls complete() and yields the full text as a single chunk.
     /// Adapters with native streaming support should override this.
     func stream(

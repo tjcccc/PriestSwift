@@ -6,12 +6,12 @@ import Foundation
 /// Profile caching, if needed, should be implemented in the host app's
 /// ProfileLoader wrapper.
 ///
-/// Spec version this implementation targets: 2.8.1
+/// Spec version this implementation targets: 2.9.0
 public final class PriestEngine: Sendable {
 
     /// Spec version this implementation targets. A test should assert this matches
     /// the known spec version to catch sync drift between the spec and this SDK.
-    public static let specVersion = "2.8.1"
+    public static let specVersion = "2.9.0"
 
     private let profileLoader: any ProfileLoader
     private let sessionStore: (any SessionStore)?
@@ -79,6 +79,7 @@ public final class PriestEngine: Sendable {
         var errorModel: PriestErrorModel? = nil
 
         do {
+            try Self.assertProviderToolsSupported(adapter, request: request)
             let result = try await adapter.complete(
                 messages: messages,
                 config: request.config,
@@ -182,6 +183,7 @@ public final class PriestEngine: Sendable {
                     )
 
                     var parts: [String] = []
+                    try Self.assertProviderToolsSupported(adapter, request: request)
                     for try await chunk in adapter.stream(
                         messages: messages,
                         config: request.config,
@@ -249,6 +251,7 @@ public final class PriestEngine: Sendable {
                     var errorModel: PriestErrorModel? = nil
 
                     do {
+                        try Self.assertProviderToolsSupported(adapter, request: request)
                         for try await event in adapter.streamEvents(
                             messages: messages,
                             config: request.config,
@@ -365,7 +368,25 @@ public final class PriestEngine: Sendable {
     }
 
     private static func callOptions(for request: PriestRequest) -> AdapterCallOptions? {
-        request.tools.isEmpty ? nil : AdapterCallOptions(tools: request.tools, toolChoice: request.toolChoice)
+        if request.tools.isEmpty && request.providerTools.isEmpty { return nil }
+        return AdapterCallOptions(
+            tools: request.tools,
+            providerTools: request.providerTools,
+            toolChoice: request.toolChoice
+        )
+    }
+
+    private static func assertProviderToolsSupported(
+        _ adapter: any ProviderAdapter,
+        request: PriestRequest
+    ) throws {
+        for tool in request.providerTools {
+            if adapter.supportsProviderTool(tool, config: request.config) { continue }
+            throw PriestError.providerError(
+                request.config.provider,
+                message: "Provider tool '\(tool.type)' is not supported for model '\(request.config.model)'."
+            )
+        }
     }
 
     // MARK: - Conversation compaction (spec 2.5.0)

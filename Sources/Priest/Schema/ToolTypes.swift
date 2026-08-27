@@ -19,6 +19,13 @@ public struct ToolDefinition: Sendable, Equatable {
     }
 }
 
+/// A tool executed entirely by the model provider (spec 2.9.0).
+public enum ProviderToolDefinition: String, Sendable, Equatable {
+    case webSearch = "web_search"
+
+    public var type: String { rawValue }
+}
+
 /// Tool selection behavior. Only meaningful when tools are provided.
 public enum ToolChoice: Sendable, Equatable {
     case auto

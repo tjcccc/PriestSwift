@@ -29,6 +29,13 @@ public final class OpenAIResponsesProvider: ProviderAdapter, @unchecked Sendable
         self.session = session
     }
 
+    public func supportsProviderTool(
+        _ tool: ProviderToolDefinition,
+        config: PriestConfig
+    ) -> Bool {
+        tool == .webSearch
+    }
+
     public func complete(
         messages: [ChatMessage],
         config: PriestConfig,
@@ -201,8 +208,11 @@ public final class OpenAIResponsesProvider: ProviderAdapter, @unchecked Sendable
         } else if outputSpec.providerFormat == .json {
             payload["text"] = ["format": ["type": "json_object"]]
         }
-        if let options, !options.tools.isEmpty {
-            payload["tools"] = options.tools.map { tool -> [String: Any] in
+        if let options {
+            let providerTools: [[String: Any]] = options.providerTools.map {
+                ["type": $0.type]
+            }
+            let functionTools: [[String: Any]] = options.tools.map { tool in
                 [
                     "type": "function",
                     "name": tool.name,
@@ -210,7 +220,11 @@ public final class OpenAIResponsesProvider: ProviderAdapter, @unchecked Sendable
                     "parameters": tool.parameters.map(foundationObject(from:)) ?? [:],
                 ]
             }
-            if let choice = options.toolChoice {
+            let tools = providerTools + functionTools
+            if !tools.isEmpty {
+                payload["tools"] = tools
+            }
+            if !tools.isEmpty, let choice = options.toolChoice {
                 switch choice {
                 case .auto: payload["tool_choice"] = "auto"
                 case .none: payload["tool_choice"] = "none"

@@ -8,7 +8,7 @@ iOS 15+ · macOS 12+ · Swift 5.9+ · Zero external dependencies
 
 ## Overview
 
-PriestSwift is a Swift Package that implements the priest protocol spec v2.8.1 natively — no Python server, no FFI, no network dependency beyond the AI provider itself. It is designed for offline and on-device use cases: iOS apps, macOS tools, Unity (via .NET interop), and any Swift host.
+PriestSwift is a Swift Package that implements the priest protocol spec v2.9.0 natively — no Python server, no FFI, no network dependency beyond the AI provider itself. It is designed for offline and on-device use cases: iOS apps, macOS tools, Unity (via .NET interop), and any Swift host.
 
 The core API is two methods on `PriestEngine`:
 
@@ -230,6 +230,24 @@ let request = PriestRequest(
 
 ---
 
+## Provider-executed tools
+
+Provider-owned tools are separate from caller-executed function tools. OpenAI
+Responses supports hosted web search:
+
+```swift
+let request = PriestRequest(
+    config: config,
+    prompt: "What changed today?",
+    providerTools: [.webSearch]
+)
+let response = try await engine.run(request)
+```
+
+Hosted tools return ordinary final text and never enter `toolExchange`.
+Unsupported provider/model combinations return `PROVIDER_ERROR` rather than
+silently dropping the requested capability.
+
 ## Reasoning
 
 Use `PriestConfig.reasoning` to request provider-neutral reasoning behavior:
@@ -292,10 +310,10 @@ Provider keys are arbitrary strings — the key you register in `adapters:` must
 
 ## Spec
 
-PriestSwift targets priest protocol spec **v2.8.1**. The spec lives in the [`priest`](https://github.com/tjcccc/priest) repository under `spec/`. It defines the canonical context assembly algorithm, session schema, timestamp format, and error codes that all priest SDKs must implement identically.
+PriestSwift targets priest protocol spec **v2.9.0**. The spec lives in the [`priest`](https://github.com/tjcccc/priest) repository under `spec/`. It defines the canonical context assembly algorithm, session schema, timestamp format, and error codes that all priest SDKs must implement identically.
 
 ```swift
-PriestEngine.specVersion  // "2.8.1"
+PriestEngine.specVersion  // "2.9.0"
 ```
 
 ---

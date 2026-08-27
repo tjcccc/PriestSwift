@@ -21,6 +21,9 @@ public struct PriestRequest: Sendable {
     public var metadata: [String: JSONValue]
     /// Tools the model may call. The caller executes them; the library transports (spec 2.4.0).
     public var tools: [ToolDefinition]
+    /// Tools executed entirely by the model provider. They do not enter the
+    /// caller's tool loop or produce ToolCall values (spec 2.9.0).
+    public var providerTools: [ProviderToolDefinition]
     /// Tool selection behavior. Only meaningful when tools is non-empty.
     public var toolChoice: ToolChoice?
     /// Tool loop history for the CURRENT user turn, appended after the user
@@ -38,6 +41,7 @@ public struct PriestRequest: Sendable {
         output: OutputSpec = .none,
         metadata: [String: JSONValue] = [:],
         tools: [ToolDefinition] = [],
+        providerTools: [ProviderToolDefinition] = [],
         toolChoice: ToolChoice? = nil,
         toolExchange: [ToolExchangeTurn] = []
     ) {
@@ -51,6 +55,7 @@ public struct PriestRequest: Sendable {
         self.output = output
         self.metadata = metadata
         self.tools = tools
+        self.providerTools = providerTools
         self.toolChoice = toolChoice
         self.toolExchange = toolExchange
     }
